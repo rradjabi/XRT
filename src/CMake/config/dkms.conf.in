@@ -4,19 +4,19 @@ PACKAGE_VERSION="@XRT_VERSION_STRING@"
 MAKE[0]="cd driver/xclng/drm/xocl; make; cd ../../../.."
 CLEAN[0]="cd driver/xclng/drm/xocl; make clean; cd ../../../.."
 
-if [[ $AWS_PEGASUS_TARGET == "1" ]]; then
+#if [[ $AWS_PEGASUS_TARGET == "1" ]]; then
   MAKE[1]="cd driver/aws/kernel/mgmt; make; cd ../../../.."
   CLEAN[1]="cd driver/aws/kernel/mgmt; make clean; cd ../../../.."
-fi
+#fi
 BUILT_MODULE_NAME[0]="xocl"
 BUILT_MODULE_LOCATION[0]="driver/xclng/drm/xocl/userpf"
 DEST_MODULE_LOCATION[0]="/kernel/extras"
 BUILT_MODULE_NAME[1]="xclmgmt"
 BUILT_MODULE_LOCATION[1]="driver/xclng/drm/xocl/mgmtpf"
 DEST_MODULE_LOCATION[1]="/kernel/extras"
-if [[ $AWS_PEGASUS_TARGET == "1" ]]; then
+#if [[ $AWS_PEGASUS_TARGET == "1" ]]; then
   BUILT_MODULE_NAME[2]="awsmgmt"
   BUILT_MODULE_LOCATION[2]="driver/aws/kernel/mgmt"
   DEST_MODULE_LOCATION[2]="/kernel/extras"
-fi
+#fi
 AUTOINSTALL="yes"
