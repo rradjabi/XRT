@@ -121,6 +121,8 @@ time make -j $jcore $verbose DESTDIR=$PWD install
 time make package
 cd $here
 
+# Build AWS library, binary, and awsmgmt/pegasus driver. Enables component building where two packages are created, xrt-aws
+# and xrt-Unspecified. xrt-Unspecified can be ignored or removed.
 cd $BUILDDIR/Release
 cmake -DCMAKE_AWS_BUILD=ON -DRDI_CCACHE=$ccache -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ../../src
 make package
