@@ -1320,7 +1320,8 @@ int xocl_usage_stat_ioctl(struct drm_device *dev, void *data,
 	return 0;
 }
 
-int xocl_mailbox_sw_transfer_ioctl(struct drm_device *dev, void *data)
+int xocl_sw_mailbox_ioctl(struct drm_device *dev, void *data,
+				   struct drm_file *filp)
 {
 	struct xocl_dev *xdev = dev->dev_private;
 
@@ -1328,7 +1329,8 @@ int xocl_mailbox_sw_transfer_ioctl(struct drm_device *dev, void *data)
 	struct drm_xocl_sw_mailbox *args;
 	args = (struct drm_xocl_sw_mailbox *)data;
 	bool dir = true;
-	return xocl_mailbox_sw_transfer(xdev,
-					dir,
-					args);
+    return 0;
+	//return xocl_mailbox_sw_transfer(xdev,
+	//				dir,
+	//				args);
 }

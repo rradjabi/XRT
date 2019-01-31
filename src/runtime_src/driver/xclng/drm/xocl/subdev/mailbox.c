@@ -769,7 +769,7 @@ static void chan_send_pkt(struct mailbox_channel *ch)
 
 	/* Pushing a packet into HW. */
 	for (i = 0; i < PACKET_SIZE; i++) {
-		if( &mbx->use_sw_channel ) {
+		if( mbx->use_sw_channel ) {
 			mbx->sw_chan_data = &pkt->body.data;
 			// trigger wake up
 			complete(&mbx->sw_pkt_complete);
