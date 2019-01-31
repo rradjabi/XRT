@@ -551,6 +551,8 @@ struct drm_xocl_sw_mailbox {
 #define DRM_IOCTL_XOCL_HOT_RESET      DRM_IO(DRM_COMMAND_BASE +	DRM_XOCL_HOT_RESET)
 #define DRM_IOCTL_XOCL_P2P_ENABLE     DRM_IOWR(DRM_COMMAND_BASE +	\
 						DRM_XOCL_P2P_ENABLE, struct drm_xocl_p2p_enable)
-#define DRM_IOCTL_XOCL_RECLOCK     DRM_IOWR(DRM_COMMAND_BASE + \
-            DRM_XOCL_RECLOCK, struct drm_xocl_reclock_info)
+#define DRM_IOCTL_XOCL_RECLOCK        DRM_IOWR(DRM_COMMAND_BASE + \
+					       DRM_XOCL_RECLOCK, struct drm_xocl_reclock_info)
+#define DRM_IOCTL_XOCL_SW_MAILBOX     DRM_IOWR(DRM_COMMAND_BASE +		\
+						DRM_XOCL_SW_MAILBOX, struct drm_xocl_sw_mailbox)
 #endif

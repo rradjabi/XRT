@@ -717,6 +717,8 @@ static void chan_send_pkt(struct mailbox_channel *ch)
 
 	MBX_DBG(mbx, "sending pkt: type=0x%x", pkt->hdr.type);
 
+	mbx->use_sw_channel = false;
+
 	/* Pushing a packet into HW. */
 	for (i = 0; i < PACKET_SIZE; i++) {
 		if( &mbx->use_sw_channel ) {
@@ -1462,13 +1464,16 @@ static int mailbox_sw_transfer(struct platform_device *pdev,
 	struct mailbox *mbx;
 	struct sw_mailbox *sw_mbox;
 	void __user *user_data;
+	mbx->use_sw_channel = true;
 
 	// sleep
 	sw_mbox = (struct sw_mailbox *)args;
 	mbx = platform_get_drvdata(pdev);
+	MBX_INFO(mbx, "RFR: sw_chan going to sleep");
 	wait_for_completion_interruptible(&mbx->sw_pkt_complete);
 
 	// upon complete(sw_pkt_complete)
+	MBX_INFO(mbx, "RFR: sw_chan WAKE UP SUCCESSFULL");
 	user_data = (void __user *)(uintptr_t)sw_mbox->data;
 	return copy_to_user(user_data, &mbx->sw_chan_data, 64);
 }
