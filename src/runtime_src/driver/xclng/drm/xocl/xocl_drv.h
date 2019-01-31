@@ -554,6 +554,8 @@ struct xocl_mailbox_funcs {
 	int (*listen)(struct platform_device *pdev,
 		mailbox_msg_cb_t cb, void *cbarg);
 	int (*reset)(struct platform_device *pdev, bool end_of_reset);
+	int (*sw_transfer)(struct platform_device *pdev, bool dir,
+				void *args);
 };
 #define	MAILBOX_DEV(xdev)	SUBDEV(xdev, XOCL_SUBDEV_MAILBOX).pldev
 #define	MAILBOX_OPS(xdev)	\
@@ -574,6 +576,9 @@ struct xocl_mailbox_funcs {
 #define	xocl_mailbox_reset(xdev, end)				\
 	(MAILBOX_READY(xdev) ? MAILBOX_OPS(xdev)->reset(MAILBOX_DEV(xdev), \
 	end) : -ENODEV)
+#define	xocl_mailbox_sw_transfer(xdev, dir, args)			\
+	(MAILBOX_READY(xdev) ? MAILBOX_OPS(xdev)->sw_transfer(MAILBOX_DEV(xdev), \
+	dir, args) : -ENODEV)
 
 struct xocl_icap_funcs {
 	void (*reset_axi_gate)(struct platform_device *pdev);

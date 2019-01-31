@@ -283,6 +283,14 @@ struct mailbox {
 	char			mbx_tst_tx_msg[TEST_MSG_LEN];
 	char			mbx_tst_rx_msg[TEST_MSG_LEN];
 	size_t			mbx_tst_tx_msg_len;
+
+	/*
+	 * Software channel settings
+	 */
+	bool use_sw_channel;
+	void *sw_chan_data;
+	bool data_ready;
+	struct completion sw_pkt_complete;
 };
 
 static inline const char *reg2name(struct mailbox *mbx, u32 *reg) {
@@ -711,8 +719,14 @@ static void chan_send_pkt(struct mailbox_channel *ch)
 
 	/* Pushing a packet into HW. */
 	for (i = 0; i < PACKET_SIZE; i++) {
-		mailbox_reg_wr(mbx, &mbx->mbx_regs->mbr_wrdata,
-			*(((u32 *)pkt) + i));
+		if( &mbx->use_sw_channel ) {
+			mbx->sw_chan_data = &pkt->body.data;
+			// trigger wake up
+			complete(&mbx->sw_pkt_complete);
+		} else {
+			mailbox_reg_wr(mbx, &mbx->mbx_regs->mbr_wrdata,
+				*(((u32 *)pkt) + i));
+		}
 	}
 
 	reset_pkt(pkt);
@@ -1431,12 +1445,41 @@ int mailbox_reset(struct platform_device *pdev, bool end_of_reset)
 	return ret;
 }
 
+/*
+ * struct drm_xocl_sw_mailbox *args
+ */
+struct sw_mailbox {
+	uint64_t flags;
+	void *data;
+	uint64_t sz;
+};
+
+static int mailbox_sw_transfer(struct platform_device *pdev,
+				bool dir,
+				void *args)
+{
+	// init needed?
+	struct mailbox *mbx;
+	struct sw_mailbox *sw_mbox;
+	void __user *user_data;
+
+	// sleep
+	sw_mbox = (struct sw_mailbox *)args;
+	mbx = platform_get_drvdata(pdev);
+	wait_for_completion_interruptible(&mbx->sw_pkt_complete);
+
+	// upon complete(sw_pkt_complete)
+	user_data = (void __user *)(uintptr_t)sw_mbox->data;
+	return copy_to_user(user_data, &mbx->sw_chan_data, 64);
+}
+
 /* Kernel APIs exported from this sub-device driver. */
 static struct xocl_mailbox_funcs mailbox_ops = {
 	.request = mailbox_request,
 	.post = mailbox_post,
 	.listen = mailbox_listen,
 	.reset = mailbox_reset,
+	.sw_transfer = mailbox_sw_transfer,
 };
 
 static int mailbox_remove(struct platform_device *pdev)
