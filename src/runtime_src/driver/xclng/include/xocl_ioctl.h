@@ -537,6 +537,8 @@ struct drm_xocl_sw_mailbox {
 #define DRM_IOCTL_XOCL_USER_INTR      DRM_IOWR(DRM_COMMAND_BASE +	\
 					       DRM_XOCL_USER_INTR, struct drm_xocl_user_intr)
 #define DRM_IOCTL_XOCL_HOT_RESET      DRM_IO(DRM_COMMAND_BASE +	DRM_XOCL_HOT_RESET)
-#define DRM_IOCTL_XOCL_RECLOCK     DRM_IOWR(DRM_COMMAND_BASE + \
-            DRM_XOCL_RECLOCK, struct drm_xocl_reclock_info)
+#define DRM_IOCTL_XOCL_RECLOCK        DRM_IOWR(DRM_COMMAND_BASE + \
+					       DRM_XOCL_RECLOCK, struct drm_xocl_reclock_info)
+#define DRM_IOCTL_XOCL_SW_MAILBOX     DRM_IOWR(DRM_COMMAND_BASE +		\
+						DRM_XOCL_SW_MAILBOX, struct drm_xocl_sw_mailbox)
 #endif
