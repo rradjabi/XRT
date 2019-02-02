@@ -260,6 +260,16 @@ struct mailbox_channel {
 	bool			mbc_timer_on;
 };
 
+
+/*
+ * struct drm_xocl_sw_mailbox *args
+ */
+struct sw_chan {
+	uint64_t flags;
+	void *data;
+	uint64_t sz;
+};
+
 /*
  * The mailbox softstate.
  */
@@ -297,10 +307,10 @@ struct mailbox {
 	/*
 	 * Software channel settings
 	 */
-	bool use_sw_channel;
-	void *sw_chan_data;
-	bool data_ready;
-	struct completion sw_pkt_complete;
+	bool sw_chan_enabled;
+	bool sw_chan_data_ready;
+	struct completion sw_chan_pkt_complete;
+	struct sw_chan *sw_chan_from_ioctl;
 };
 
 static inline const char *reg2name(struct mailbox *mbx, u32 *reg) {
@@ -769,10 +779,13 @@ static void chan_send_pkt(struct mailbox_channel *ch)
 
 	/* Pushing a packet into HW. */
 	for (i = 0; i < PACKET_SIZE; i++) {
-		if( mbx->use_sw_channel ) {
-			mbx->sw_chan_data = &pkt->body.data;
-			// trigger wake up
-			complete(&mbx->sw_pkt_complete);
+		if( mbx->sw_chan_enabled ) {
+			void __user *user_data;
+			user_data = (void __user *)(uintptr_t)mbx->sw_chan_from_ioctl->data;
+			mbx->sw_chan_data_ready = copy_to_user(user_data,
+								&pkt->body.data,
+								mbx->sw_chan_from_ioctl->sz);
+			complete(&mbx->sw_chan_pkt_complete);
 		} else {
 			mailbox_reg_wr(mbx, &mbx->mbx_regs->mbr_wrdata,
 				*(((u32 *)pkt) + i));
@@ -1538,38 +1551,27 @@ int mailbox_reset(struct platform_device *pdev, bool end_of_reset)
 	return ret;
 }
 
-/*
- * struct drm_xocl_sw_mailbox *args
- */
-struct sw_mailbox {
-	uint64_t flags;
-	void *data;
-	uint64_t sz;
-};
-
 static int mailbox_sw_transfer(struct platform_device *pdev,
 				bool dir,
 				void *args)
 {
 	// declarations
 	struct mailbox *mbx;
-	struct sw_mailbox *sw_mbox;
-	void __user *user_data;
 
-    // inits
+	// inits
 	mbx = platform_get_drvdata(pdev);
-	mbx->use_sw_channel = true;
-	init_completion(&mbx->sw_pkt_complete);
+	mbx->sw_chan_enabled = true;
+	mbx->sw_chan_data_ready = false;
+	mbx->sw_chan_from_ioctl = (struct sw_chan *)args;
+	init_completion(&mbx->sw_chan_pkt_complete);
 
 	// sleep
-	sw_mbox = (struct sw_mailbox *)args;
 	MBX_INFO(mbx, "RFR: sw_chan going to sleep");
-	wait_for_completion_interruptible(&mbx->sw_pkt_complete);
+	wait_for_completion_interruptible(&mbx->sw_chan_pkt_complete);
 
 	// upon completion
 	MBX_INFO(mbx, "RFR: sw_chan WAKE UP SUCCESSFULL");
-	user_data = (void __user *)(uintptr_t)sw_mbox->data;
-	return copy_to_user(user_data, &mbx->sw_chan_data, 64);
+	return mbx->sw_chan_data_ready;
 }
 
 /* Kernel APIs exported from this sub-device driver. */
