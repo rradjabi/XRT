@@ -92,7 +92,7 @@ static inline void xocl_memcpy_toio(void *iomem, void *buf, u32 size)
 #define xocl_info(dev, fmt, args...)			\
 	dev_info(dev, "%s: "fmt, __func__, ##args)
 #define xocl_dbg(dev, fmt, args...)			\
-	dev_dbg(dev, "%s: "fmt, __func__, ##args)
+	dev_info(dev, "%s: "fmt, __func__, ##args)
 
 #define xocl_xdev_info(xdev, fmt, args...)		\
 	xocl_info(XDEV2DEV(xdev), fmt, ##args)
@@ -639,8 +639,7 @@ struct xocl_mailbox_funcs {
 		mailbox_msg_cb_t cb, void *cbarg);
 	int (*reset)(struct platform_device *pdev, bool end_of_reset);
 	int (*check_peer)(struct platform_device *pdev);
-	int (*sw_transfer)(struct platform_device *pdev, bool dir,
-				void *args);
+	int (*sw_transfer)(struct platform_device *pdev, void *args);
 };
 #define	MAILBOX_DEV(xdev)	SUBDEV(xdev, XOCL_SUBDEV_MAILBOX).pldev
 #define	MAILBOX_OPS(xdev)	\
@@ -664,9 +663,9 @@ struct xocl_mailbox_funcs {
 #define	xocl_mailbox_check_peer(xdev)				\
 	(MAILBOX_READY(xdev) ? MAILBOX_OPS(xdev)->check_peer(MAILBOX_DEV(xdev)) \
 		: -ENODEV)
-#define	xocl_mailbox_sw_transfer(xdev, dir, args)			\
+#define	xocl_mailbox_sw_transfer(xdev, args)
 	(MAILBOX_READY(xdev) ? MAILBOX_OPS(xdev)->sw_transfer(MAILBOX_DEV(xdev), \
-	dir, args) : -ENODEV)
+	args) : -ENODEV)
 
 struct xocl_icap_funcs {
 	void (*reset_axi_gate)(struct platform_device *pdev);

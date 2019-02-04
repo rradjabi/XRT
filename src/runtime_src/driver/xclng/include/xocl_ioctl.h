@@ -495,6 +495,7 @@ struct drm_xocl_reclock_info {
 struct drm_xocl_sw_mailbox {
 	uint64_t flags;
 	void *data;
+	bool isTx;
 	uint64_t sz;
 };
 
