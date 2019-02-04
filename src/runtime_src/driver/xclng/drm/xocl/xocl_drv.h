@@ -74,7 +74,7 @@ static inline bool uuid_is_null(const xuid_t *uuid)
 #define xocl_info(dev, fmt, args...)			\
 	dev_info(dev, "%s: "fmt, __func__, ##args)
 #define xocl_dbg(dev, fmt, args...)			\
-	dev_dbg(dev, "%s: "fmt, __func__, ##args)
+	dev_info(dev, "%s: "fmt, __func__, ##args)
 
 #define	XOCL_DRV_VER_NUM(ma, mi, p)		\
 	((ma) * 1000 + (mi) * 100 + (p))
@@ -554,8 +554,7 @@ struct xocl_mailbox_funcs {
 	int (*listen)(struct platform_device *pdev,
 		mailbox_msg_cb_t cb, void *cbarg);
 	int (*reset)(struct platform_device *pdev, bool end_of_reset);
-	int (*sw_transfer)(struct platform_device *pdev, bool dir,
-				void *args);
+	int (*sw_transfer)(struct platform_device *pdev, void *args);
 };
 #define	MAILBOX_DEV(xdev)	SUBDEV(xdev, XOCL_SUBDEV_MAILBOX).pldev
 #define	MAILBOX_OPS(xdev)	\
@@ -576,9 +575,9 @@ struct xocl_mailbox_funcs {
 #define	xocl_mailbox_reset(xdev, end)				\
 	(MAILBOX_READY(xdev) ? MAILBOX_OPS(xdev)->reset(MAILBOX_DEV(xdev), \
 	end) : -ENODEV)
-#define	xocl_mailbox_sw_transfer(xdev, dir, args)			\
+#define	xocl_mailbox_sw_transfer(xdev, args)			\
 	(MAILBOX_READY(xdev) ? MAILBOX_OPS(xdev)->sw_transfer(MAILBOX_DEV(xdev), \
-	dir, args) : -ENODEV)
+	args) : -ENODEV)
 
 struct xocl_icap_funcs {
 	void (*reset_axi_gate)(struct platform_device *pdev);

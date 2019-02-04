@@ -1346,10 +1346,8 @@ int xocl_sw_mailbox_ioctl(struct drm_device *dev, void *data,
 	// cast data
 	struct drm_xocl_sw_mailbox *args;
 	args = (struct drm_xocl_sw_mailbox *)data;
-	bool dir = true;
+	args->isTx = true;
 
 	// 0 is a successful transfer
-	return xocl_mailbox_sw_transfer(xdev,
-					dir,
-					args);
+	return xocl_mailbox_sw_transfer(xdev, args);
 }

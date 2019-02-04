@@ -263,6 +263,7 @@ struct mailbox_channel {
 struct sw_chan {
 	uint64_t flags;
 	void *data;
+	bool isTx;
 	uint64_t sz;
 };
 
@@ -700,15 +701,25 @@ static void chan_recv_pkt(struct mailbox_channel *ch)
 
 	BUG_ON(valid_pkt(pkt));
 
+
 	/* Picking up a packet from HW. */
 	for (i = 0; i < PACKET_SIZE; i++) {
-		while ((mailbox_reg_rd(mbx,
-			&mbx->mbx_regs->mbr_status) & STATUS_EMPTY) &&
-			(retry-- > 0))
-			msleep(100);
+		if( !mbx->sw_chan_enabled ) {
+			while ((mailbox_reg_rd(mbx,
+				&mbx->mbx_regs->mbr_status) & STATUS_EMPTY) &&
+				(retry-- > 0))
+				msleep(100);
 
-		*(((u32 *)pkt) + i) =
-			mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_rddata);
+			*(((u32 *)pkt) + i) =
+				mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_rddata);
+		} else {
+			void __user *user_data;
+			user_data = (void __user *)(uintptr_t)mbx->sw_chan_from_ioctl->data;
+			// what is return val of copy_from_user?
+			mbx->sw_chan_data_ready = copy_from_user(&pkt->body.data,
+								 user_data,
+								 mbx->sw_chan_from_ioctl->sz);
+		}
 	}
 
 	if ((mailbox_chk_err(mbx) & STATUS_EMPTY) != 0)
@@ -1461,7 +1472,6 @@ int mailbox_reset(struct platform_device *pdev, bool end_of_reset)
 }
 
 static int mailbox_sw_transfer(struct platform_device *pdev,
-				bool dir,
 				void *args)
 {
 	// declarations
@@ -1474,9 +1484,14 @@ static int mailbox_sw_transfer(struct platform_device *pdev,
 	mbx->sw_chan_from_ioctl = (struct sw_chan *)args;
 	init_completion(&mbx->sw_chan_pkt_complete);
 
-	// sleep
-	MBX_INFO(mbx, "RFR: sw_chan going to sleep");
-	wait_for_completion_interruptible(&mbx->sw_chan_pkt_complete);
+	if(mbx->sw_chan_from_ioctl->isTx) {
+		// TX requires wait_for_completion
+		MBX_INFO(mbx, "RFR: sw_chan going to sleep");
+		wait_for_completion_interruptible(&mbx->sw_chan_pkt_complete);
+	} else {
+		// get right away
+		chan_do_rx(&mbx->mbx_rx);
+	}
 
 	// upon completion
 	MBX_INFO(mbx, "RFR: sw_chan WAKE UP SUCCESSFULL");
