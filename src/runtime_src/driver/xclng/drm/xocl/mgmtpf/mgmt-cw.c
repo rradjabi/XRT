@@ -36,9 +36,9 @@ void fill_frequency_info(struct xclmgmt_dev *lro, struct xclmgmt_ioc_info *obj)
 		ARRAY_SIZE(obj->ocl_frequency));
 }
 
-int mgmt_sw_mailbox_transfer_ioctl(struct xclmgmt_dev *lro, void *data)
+int mgmt_sw_mailbox_tx_ioctl(struct xclmgmt_dev *lro, void *data)
 {
-	mgmt_info(lro, "mgmt_sw_mailbox_ioctl called");
+	mgmt_info(lro, "mgmt_sw_mailbox_tx_ioctl called");
 	struct drm_xocl_sw_mailbox *args;
 	args = (struct drm_xocl_sw_mailbox *)data;
 
