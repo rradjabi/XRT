@@ -47,3 +47,15 @@ int mgmt_sw_mailbox_tx_ioctl(struct xclmgmt_dev *lro, void *data)
 	// 0 is a successful transfer
 	return xocl_mailbox_sw_transfer(lro, args);
 }
+
+int mgmt_sw_mailbox_rx_ioctl(struct xclmgmt_dev *lro, void *data)
+{
+	mgmt_info(lro, "mgmt_sw_mailbox_rx_ioctl called");
+	struct drm_xocl_sw_mailbox *args;
+	args = (struct drm_xocl_sw_mailbox *)data;
+
+	printk( "M-ioctl: dir: %i", args->isTx );
+
+	// 0 is a successful transfer
+	return xocl_mailbox_sw_transfer(lro, args);
+}
