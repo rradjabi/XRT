@@ -688,7 +688,7 @@ struct xocl_icap_funcs {
 		enum data_kind kind);
 	void* (*get_axlf_section_data)(struct platform_device *pdev,
 		enum axlf_section_kind kind);
-	int (*xclmgmt_mailbox_sw_transfer)(struct platform_device *pdev, struct xclmgmt_ioc_sw_mailbox *sw_chan);
+	int (*xclmgmt_mailbox_sw_tx)(struct platform_device *pdev, struct xclmgmt_ioc_sw_mailbox *sw_chan);
 };
 #define	ICAP_DEV(xdev)	SUBDEV(xdev, XOCL_SUBDEV_ICAP).pldev
 #define	ICAP_OPS(xdev)							\
