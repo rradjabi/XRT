@@ -123,7 +123,6 @@
 #include <linux/completion.h>
 #include <linux/list.h>
 #include <linux/device.h>
-
 #include "../xocl_drv.h"
 
 int mailbox_no_intr = 0;
@@ -262,7 +261,7 @@ struct mailbox_channel {
  */
 struct sw_chan {
 	uint64_t flags;
-	void *data;
+	void *pData;
 	bool isTx;
 	uint64_t sz;
 };
@@ -299,7 +298,7 @@ struct mailbox {
 	 * Software channel settings
 	 */
 	bool sw_chan_enabled;
-	bool sw_chan_data_ready;
+	bool sw_chan_xfer_done;
 	struct completion sw_chan_pkt_complete;
 	struct sw_chan *sw_chan_from_ioctl;
 };
@@ -703,8 +702,8 @@ static void chan_recv_pkt(struct mailbox_channel *ch)
 
 
 	/* Picking up a packet from HW. */
-	for (i = 0; i < PACKET_SIZE; i++) {
-		if( !mbx->sw_chan_enabled ) {
+	if( !mbx->sw_chan_enabled ) {
+		for (i = 0; i < PACKET_SIZE; i++) {
 			while ((mailbox_reg_rd(mbx,
 				&mbx->mbx_regs->mbr_status) & STATUS_EMPTY) &&
 				(retry-- > 0))
@@ -712,15 +711,8 @@ static void chan_recv_pkt(struct mailbox_channel *ch)
 
 			*(((u32 *)pkt) + i) =
 				mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_rddata);
-		} else {
-			void __user *user_data;
-			user_data = (void __user *)(uintptr_t)mbx->sw_chan_from_ioctl->data;
-			// what is return val of copy_from_user?
-			mbx->sw_chan_data_ready = copy_from_user(&pkt->body.data,
-								 user_data,
-								 mbx->sw_chan_from_ioctl->sz);
 		}
-	}
+	} // else the data was already copied to pkt from userspace
 
 	if ((mailbox_chk_err(mbx) & STATUS_EMPTY) != 0)
 		reset_pkt(pkt);
@@ -738,20 +730,16 @@ static void chan_send_pkt(struct mailbox_channel *ch)
 
 	MBX_DBG(mbx, "sending pkt: type=0x%x", pkt->hdr.type);
 
-	//mbx->use_sw_channel = false;
-
-	/* Pushing a packet into HW. */
-	for (i = 0; i < PACKET_SIZE; i++) {
-		if( mbx->sw_chan_enabled ) {
-			void __user *user_data;
-			user_data = (void __user *)(uintptr_t)mbx->sw_chan_from_ioctl->data;
-			mbx->sw_chan_data_ready = copy_to_user(user_data,
-								&pkt->body.data,
-								mbx->sw_chan_from_ioctl->sz);
-			complete(&mbx->sw_chan_pkt_complete);
-		} else {
-			mailbox_reg_wr(mbx, &mbx->mbx_regs->mbr_wrdata,
-				*(((u32 *)pkt) + i));
+	if( mbx->sw_chan_enabled ) {
+		/* Cannot call copy to user in this context because
+		 * the user pointer is invalid, though access_ok does
+		 * not indicate this. */
+		complete(&mbx->sw_chan_pkt_complete);
+	} else {
+		/* Pushing a packet into HW. */
+		for (i = 0; i < PACKET_SIZE; i++) {
+				mailbox_reg_wr(mbx, &mbx->mbx_regs->mbr_wrdata,
+					*(((u32 *)pkt) + i));
 		}
 	}
 
@@ -1474,28 +1462,53 @@ int mailbox_reset(struct platform_device *pdev, bool end_of_reset)
 static int mailbox_sw_transfer(struct platform_device *pdev,
 				void *args)
 {
-	// declarations
 	struct mailbox *mbx;
 
-	// inits
 	mbx = platform_get_drvdata(pdev);
 	mbx->sw_chan_enabled = true;
-	mbx->sw_chan_data_ready = false;
+	mbx->sw_chan_xfer_done = false;
 	mbx->sw_chan_from_ioctl = (struct sw_chan *)args;
-	init_completion(&mbx->sw_chan_pkt_complete);
+	mbx->sw_chan_from_ioctl->sz = 64;
+
+	MBX_INFO(mbx, "RFR: isTx: %d", mbx->sw_chan_from_ioctl->isTx);
+
 
 	if(mbx->sw_chan_from_ioctl->isTx) {
 		// TX requires wait_for_completion
-		MBX_INFO(mbx, "RFR: sw_chan going to sleep");
+		MBX_INFO(mbx, "RFR: TX: going to sleep addr(complete), addr(mtx): %lu, %lu",
+			 &mbx->sw_chan_pkt_complete, &mbx->mbx_tx.mbc_mutex);
+		init_completion(&mbx->sw_chan_pkt_complete);
 		wait_for_completion_interruptible(&mbx->sw_chan_pkt_complete);
+		MBX_INFO(mbx, "RFR: TX: woken up");
+
+		/*
+		 * Mutex is locked in chan_send_pkt just before
+		 * waking this thread. mbx_tx.mbc_packet is a
+		 * shared resource we need to make sure is
+		 * not modified before writing to user.
+		 *
+		 * TODO: Protect mbc_packet with mutex.
+		 */
+		mutex_lock(&mbx->mbx_tx.mbc_mutex);
+		mbx->sw_chan_xfer_done = copy_to_user(mbx->sw_chan_from_ioctl->pData,
+						      &mbx->mbx_tx.mbc_packet,
+						      mbx->sw_chan_from_ioctl->sz);
+		mutex_unlock(&mbx->mbx_tx.mbc_mutex);
+		MBX_INFO(mbx, "RFR: TX: copy_to_user: %lu", mbx->sw_chan_xfer_done );
 	} else {
+		MBX_INFO(mbx, "RFR: RX: addr(mtx): %lu",
+			 &mbx->mbx_tx.mbc_mutex);
 		// get right away
+		mutex_lock(&mbx->mbx_rx.mbc_mutex);
+		mbx->sw_chan_xfer_done = copy_from_user(&mbx->mbx_rx.mbc_packet,
+							mbx->sw_chan_from_ioctl->pData,
+							mbx->sw_chan_from_ioctl->sz);
+		mutex_unlock(&mbx->mbx_rx.mbc_mutex);
 		chan_do_rx(&mbx->mbx_rx);
+		MBX_INFO(mbx, "RFR: RX: copy_from_user: %lu", mbx->sw_chan_xfer_done );
 	}
 
-	// upon completion
-	MBX_INFO(mbx, "RFR: sw_chan WAKE UP SUCCESSFULL");
-	return mbx->sw_chan_data_ready;
+	return mbx->sw_chan_xfer_done;
 }
 
 /* Kernel APIs exported from this sub-device driver. */
