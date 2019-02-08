@@ -136,6 +136,9 @@ long mgmt_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case XCLMGMT_IOCSWMAILBOXTX:
 		result = mgmt_sw_mailbox_tx_ioctl(lro, (void *)arg);
 		break;
+	case XCLMGMT_IOCSWMAILBOXRX:
+		result = mgmt_sw_mailbox_rx_ioctl(lro, (void *)arg);
+		break;
 	default:
 		printk(KERN_DEBUG "MGMT default IOCTL request %u\n", cmd & 0xff);
 		result = -ENOTTY;

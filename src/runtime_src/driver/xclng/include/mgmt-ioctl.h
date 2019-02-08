@@ -48,6 +48,7 @@
  *      temperature)                                                          xclmgmt_sysmon) interface on sysfs
  * 7    Querying device errors                 XCLMGMT_IOCERRINFO             xclErrorStatus
  * 8    SW Mailbox Tx                          XCLMGMT_IOCSWMAILBOXTX         xclmgmt_ioc_sw_mailbox
+ * 8    SW Mailbox Rx                          XCLMGMT_IOCSWMAILBOXRX         xclmgmt_ioc_sw_mailbox
  * ==== ====================================== ============================== ==================================
  *
  */
@@ -76,6 +77,7 @@ enum XCLMGMT_IOC_TYPES {
 	XCLMGMT_IOC_ICAP_DOWNLOAD_AXLF,
 	XCLMGMT_IOC_ERR_INFO,
 	XCLMGMT_IOC_SW_MAILBOX_TX,
+	XCLMGMT_IOC_SW_MAILBOX_RX,
 	XCLMGMT_IOC_MAX
 };
 
@@ -196,6 +198,7 @@ struct xclmgmt_ioc_sw_mailbox {
 #define XCLMGMT_IOCREBOOT         _IO  (XCLMGMT_IOC_MAGIC,XCLMGMT_IOC_REBOOT)
 #define XCLMGMT_IOCERRINFO	  _IOR (XCLMGMT_IOC_MAGIC,XCLMGMT_IOC_ERR_INFO, struct xclErrorStatus)
 #define XCLMGMT_IOCSWMAILBOXTX    _IOWR (XCLMGMT_IOC_MAGIC,XCLMGMT_IOC_SW_MAILBOX_TX, struct xclmgmt_ioc_sw_mailbox)
+#define XCLMGMT_IOCSWMAILBOXRX    _IOWR (XCLMGMT_IOC_MAGIC,XCLMGMT_IOC_SW_MAILBOX_RX, struct xclmgmt_ioc_sw_mailbox)
 
 #define	XCLMGMT_MB_HWMON_NAME	    "xclmgmt_microblaze"
 #define XCLMGMT_SYSMON_HWMON_NAME   "xclmgmt_sysmon"
