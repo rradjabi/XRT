@@ -292,7 +292,9 @@ static const struct drm_ioctl_desc xocl_ioctls[] = {
 		  DRM_AUTH|DRM_UNLOCKED|DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(XOCL_RECLOCK, xocl_reclock_ioctl,
 	  DRM_AUTH|DRM_UNLOCKED|DRM_RENDER_ALLOW),
-	DRM_IOCTL_DEF_DRV(XOCL_SW_MAILBOX, xocl_sw_mailbox_ioctl,
+	DRM_IOCTL_DEF_DRV(XOCL_SW_MAILBOX_TX, xocl_sw_mailbox_tx_ioctl,
+			  DRM_AUTH|DRM_UNLOCKED|DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(XOCL_SW_MAILBOX_RX, xocl_sw_mailbox_rx_ioctl,
 			  DRM_AUTH|DRM_UNLOCKED|DRM_RENDER_ALLOW),
 };
 

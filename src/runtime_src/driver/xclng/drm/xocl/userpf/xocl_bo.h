@@ -121,7 +121,9 @@ int xocl_pread_unmgd_ioctl(struct drm_device *dev, void *data,
 	struct drm_file *filp);
 int xocl_usage_stat_ioctl(struct drm_device *dev, void *data,
 	struct drm_file *filp);
-int xocl_sw_mailbox_ioctl(struct drm_device *dev, void *data,
+int xocl_sw_mailbox_tx_ioctl(struct drm_device *dev, void *data,
+	struct drm_file *filp);
+int xocl_sw_mailbox_rx_ioctl(struct drm_device *dev, void *data,
 	struct drm_file *filp);
 
 struct sg_table *xocl_gem_prime_get_sg_table(struct drm_gem_object *obj);
