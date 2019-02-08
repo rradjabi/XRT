@@ -47,6 +47,7 @@
  * 6    Device sensors (current, voltage and   NA                             *hwmon* (xclmgmt_microblaze and
  *      temperature)                                                          xclmgmt_sysmon) interface on sysfs
  * 7    Querying device errors                 XCLMGMT_IOCERRINFO             xclErrorStatus
+ * 8    SW Mailbox Transfer                    XCLMGMT_IOCSWMAILBOXTRANSFER   xclmgmt_ioc_sw_mailbox
  * ==== ====================================== ============================== ==================================
  *
  */
@@ -74,6 +75,7 @@ enum XCLMGMT_IOC_TYPES {
 	XCLMGMT_IOC_REBOOT,
 	XCLMGMT_IOC_ICAP_DOWNLOAD_AXLF,
 	XCLMGMT_IOC_ERR_INFO,
+	XCLMGMT_IOC_SW_MAILBOX_TRANSFER,
 	XCLMGMT_IOC_MAX
 };
 
@@ -169,13 +171,21 @@ struct xclmgmt_ioc_freqscaling {
 	unsigned short ocl_target_freq[XCLMGMT_NUM_SUPPORTED_CLOCKS];
 };
 
-
 struct xclmgmt_mailbox_conn{
 	void *kaddr;
 	uint64_t paddr;
 	uint32_t crc32;
 };
 
+/**
+ * struct xclmgmt_ioc_sw_mailbox
+ */
+struct xclmgmt_ioc_sw_mailbox {
+	uint64_t flags;
+	void *data;
+	bool isTx;
+	uint64_t sz;
+};
 
 #define XCLMGMT_IOCINFO		  _IOR (XCLMGMT_IOC_MAGIC,XCLMGMT_IOC_INFO,		 struct xclmgmt_ioc_info)
 #define XCLMGMT_IOCICAPDOWNLOAD	  _IOW (XCLMGMT_IOC_MAGIC,XCLMGMT_IOC_ICAP_DOWNLOAD,	 struct xclmgmt_ioc_bitstream)
@@ -185,6 +195,7 @@ struct xclmgmt_mailbox_conn{
 #define XCLMGMT_IOCOCLRESET       _IO  (XCLMGMT_IOC_MAGIC,XCLMGMT_IOC_OCL_RESET)
 #define XCLMGMT_IOCREBOOT         _IO  (XCLMGMT_IOC_MAGIC,XCLMGMT_IOC_REBOOT)
 #define XCLMGMT_IOCERRINFO	  _IOR (XCLMGMT_IOC_MAGIC,XCLMGMT_IOC_ERR_INFO, struct xclErrorStatus)
+#define XCLMGMT_IOCSWMAILBOXTRANSFER _IOWR (XCLMGMT_IOC_MAGIC,XCLMGMT_IOC_SW_MAILBOX_TRANSFER, struct xclmgmt_ioc_sw_mailbox)
 
 #define	XCLMGMT_MB_HWMON_NAME	    "xclmgmt_microblaze"
 #define XCLMGMT_SYSMON_HWMON_NAME   "xclmgmt_sysmon"
