@@ -88,6 +88,7 @@ static int bitstream_ioctl_axlf(struct xclmgmt_dev *lro, const void __user *arg)
 
 long mgmt_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
+	printk(KERN_ERR "mgmt_ioctl START\n");
 	struct xclmgmt_dev *lro = (struct xclmgmt_dev *)filp->private_data;
 	long result = 0;
 
@@ -134,9 +135,13 @@ long mgmt_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		result = err_info_ioctl(lro, (void __user *)arg);
 		break;
 	case XCLMGMT_IOCSWMAILBOXTX:
+		// give up the mutex for Mailbox ioctl
+		mutex_unlock(&lro->busy_mutex);
 		result = mgmt_sw_mailbox_tx_ioctl(lro, (void *)arg);
 		break;
 	case XCLMGMT_IOCSWMAILBOXRX:
+		// give up the mutex for Mailbox ioctl
+		mutex_unlock(&lro->busy_mutex);
 		result = mgmt_sw_mailbox_rx_ioctl(lro, (void *)arg);
 		break;
 	default:
