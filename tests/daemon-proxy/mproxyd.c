@@ -60,7 +60,7 @@ void *sw_mailbox_chan_xocl_to_xclmgmt(void *handles_void_ptr)
     printf( "[XOCL->XCLMGMT Intercept ON]\n" );
     for( ;; ) {
         args.isTx = true;
-        ret = ioctl(sHandles->userHandle, DRM_IOCTL_XOCL_SW_MAILBOX_TX, &args);
+        ret = ioctl(sHandles->userHandle, DRM_IOCTL_XOCL_SW_MAILBOX, &args);
         printf("[xocl-pkt-tx]\n");
         if( ret != 0 ) {
             printf("user-transfer Errno: %s\n", strerror(errno));
@@ -68,7 +68,7 @@ void *sw_mailbox_chan_xocl_to_xclmgmt(void *handles_void_ptr)
         }
 
         args.isTx = false;
-        ret = ioctl(sHandles->mgmtHandle, XCLMGMT_IOCSWMAILBOXRX, &args);
+        ret = ioctl(sHandles->mgmtHandle, XCLMGMT_IOCSWMAILBOX, &args);
         printf("[mgmt-pkt-rx]\n");
         if( ret != 0 ) {
             printf("mgmt-transfer Errno: %s\n", strerror(errno));
@@ -90,7 +90,7 @@ void *sw_mailbox_chan_xclmgmt_to_xocl(void *handles_void_ptr)
     printf( "[XCLMGMT->XOCL Intercept ON]\n" );
     for( ;; ) {
         args.isTx = true;
-        ret = ioctl(sHandles->mgmtHandle, XCLMGMT_IOCSWMAILBOXTX, &args);
+        ret = ioctl(sHandles->mgmtHandle, XCLMGMT_IOCSWMAILBOX, &args);
         printf("                [mgmt-pkt-tx]\n");
         if( ret != 0 ) {
             printf("user-transfer Errno: %s\n", strerror(errno));
@@ -98,7 +98,7 @@ void *sw_mailbox_chan_xclmgmt_to_xocl(void *handles_void_ptr)
         }
 
         args.isTx = false;
-        ret = ioctl(sHandles->userHandle, DRM_IOCTL_XOCL_SW_MAILBOX_RX, &args);
+        ret = ioctl(sHandles->userHandle, DRM_IOCTL_XOCL_SW_MAILBOX, &args);
         printf("                [xocl-pkt-rx]\n");
         if( ret != 0 ) {
             printf("mgmt-transfer Errno: %s\n", strerror(errno));
