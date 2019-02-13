@@ -62,16 +62,18 @@ void *sw_mailbox_chan_xocl_to_xclmgmt(void *handles_void_ptr)
         args.isTx = true;
         ret = ioctl(sHandles->userHandle, DRM_IOCTL_XOCL_SW_MAILBOX_TX, &args);
         printf("[xocl-pkt-tx]\n");
-        if( ret < 0 )
+        if( ret < 0 ) {
             printf("user-transfer Errno: %s\n", strerror(errno));
+            return;
+        }
 
         args.isTx = false;
-        printf("calling XCLMGMT RX IOCTL\n");
         ret = ioctl(sHandles->mgmtHandle, XCLMGMT_IOCSWMAILBOXRX, &args);
-        printf("return from XCLMGMT RX IOCTL\n");
         printf("[mgmt-pkt-rx]\n");
-        if( ret < 0 )
+        if( ret < 0 ) {
             printf("mgmt-transfer Errno: %s\n", strerror(errno));
+            return;
+        }
     }
 }
 
@@ -89,20 +91,25 @@ void *sw_mailbox_chan_xclmgmt_to_xocl(void *handles_void_ptr)
     for( ;; ) {
         args.isTx = true;
         ret = ioctl(sHandles->mgmtHandle, XCLMGMT_IOCSWMAILBOXTX, &args);
-        printf("[mgmt-pkt-tx]\n");
-        if( ret < 0 )
+        printf("                [mgmt-pkt-tx]\n");
+        if( ret < 0 ) {
             printf("user-transfer Errno: %s\n", strerror(errno));
+            return;
+        }
 
         args.isTx = false;
         ret = ioctl(sHandles->userHandle, DRM_IOCTL_XOCL_SW_MAILBOX_RX, &args);
-        printf("[xocl-pkt-rx]\n");
-        if( ret < 0 )
+        printf("                [xocl-pkt-rx]\n");
+        if( ret < 0 ) {
             printf("mgmt-transfer Errno: %s\n", strerror(errno));
+            return;
+        }
     }
 }
 
 int main(void)
 {
+    printf( "size of uint64_t: %lu\n", sizeof(uint64_t) );
     // add echo 1 > sysfs/mailbox...ctrl to enable sw channel in mgmt
     //
     int uHandle = 0;

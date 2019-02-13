@@ -258,6 +258,18 @@ struct mailbox_channel {
 
 	struct timer_list	mbc_timer;
 	bool			mbc_timer_on;
+
+	/*
+	 * Software channel settings
+	 */
+	bool sw_chan_ready;
+//	bool sw_chan_rx_ready;
+//	bool sw_chan_tx_ready;
+//	struct completion sw_chan_tx_complete;
+//	struct completion sw_chan_rx_complete;
+	struct completion sw_chan_complete;
+	struct sw_chan *sw_chan_from_ioctl;
+	uint64_t sw_chan_buf[8];
 };
 
 
@@ -312,6 +324,7 @@ struct mailbox {
 	bool sw_chan_xfer_done;
 	struct completion sw_chan_pkt_complete;
 	struct sw_chan *sw_chan_from_ioctl;
+	bool sw_mbx_enabled;
 };
 
 static inline const char *reg2name(struct mailbox *mbx, u32 *reg) {
@@ -379,14 +392,17 @@ irqreturn_t mailbox_isr(int irq, void *arg)
 	u32 is = mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_is);
 
 	while (is) {
-		MBX_DBG(mbx, "intr status: 0x%x", is);
+//		MBX_DBG(mbx, "intr status: 0x%x", is);
+	    MBX_INFO(mbx, "intr status: 0x%x", is);
 
 		if ((is & FLAG_STI) != 0) {
 			/* A packet has been sent successfully. */
+    MBX_INFO(mbx, "mbc_worker complete called.");
 			complete(&mbx->mbx_tx.mbc_worker);
 		}
 		if ((is & FLAG_RTI) != 0) {
 			/* A packet is waiting to be received from mailbox. */
+    MBX_INFO(mbx, "mbc_worker complete called.");
 			complete(&mbx->mbx_rx.mbc_worker);
 		}
 		/* Anything else is not expected. */
@@ -417,6 +433,7 @@ static void chan_timer(struct timer_list *t)
 	MBX_DBG(ch->mbc_parent, "%s tick", ch->mbc_name);
 
 	set_bit(MBXCS_BIT_TICK, &ch->mbc_state);
+    MBX_INFO(ch->mbc_parent, "mbc_worker complete called.");
 	complete(&ch->mbc_worker);
 
 	/* We're a periodic timer. */
@@ -690,6 +707,9 @@ static int chan_init(struct mailbox *mbx, char *nm,
 	INIT_WORK(&ch->mbc_work, chann_worker);
 	queue_work(ch->mbc_wq, &ch->mbc_work);
 
+	ch->sw_chan_ready = false;
+	init_completion(&ch->sw_chan_complete);
+
 	/* One timer for one channel. */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,15,0)
 	setup_timer(&ch->mbc_timer, chan_timer, (unsigned long)ch);
@@ -715,6 +735,7 @@ static void chan_fini(struct mailbox_channel *ch)
 	set_bit(MBXCS_BIT_STOP, &ch->mbc_state);
 	mutex_unlock(&ch->mbc_mutex);
 
+    MBX_INFO(ch->mbc_parent, "mbc_worker complete called.");
 	complete(&ch->mbc_worker);
 	cancel_work_sync(&ch->mbc_work);
 	destroy_workqueue(ch->mbc_wq);
@@ -749,9 +770,18 @@ static void chan_recv_pkt(struct mailbox_channel *ch)
 
 	BUG_ON(valid_pkt(pkt));
 
+	if(mbx->sw_mbx_enabled) {
+		if(!ch->sw_chan_ready) {
+			MBX_ERR(mbx, "RFR, sw_chan not ready.");
+			return;
+		}
+		MBX_INFO(mbx, "RFR, chan_recv_pkt calling complete(&mbx->sw_chan_rx_complete).");
 
-	/* Picking up a packet from HW. */
-	if( !mbx->sw_chan_enabled ) {
+		/* copy from chan buf */
+		(void) memcpy(&ch->mbc_packet, &ch->sw_chan_buf, (8*sizeof(uint64_t)));// ch->sw_chan_from_ioctl->sz);
+		complete(&ch->sw_chan_complete);
+	} else {
+		/* Picking up a packet from HW. */
 		for (i = 0; i < PACKET_SIZE; i++) {
 			while ((mailbox_reg_rd(mbx,
 				&mbx->mbx_regs->mbr_status) & STATUS_EMPTY) &&
@@ -761,12 +791,11 @@ static void chan_recv_pkt(struct mailbox_channel *ch)
 			*(((u32 *)pkt) + i) =
 				mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_rddata);
 		}
-	} // else the data was already copied to pkt from userspace
-
-	if ((mailbox_chk_err(mbx) & STATUS_EMPTY) != 0)
-		reset_pkt(pkt);
-	else
-		MBX_DBG(mbx, "received pkt: type=0x%x", pkt->hdr.type);
+		if ((mailbox_chk_err(mbx) & STATUS_EMPTY) != 0)
+			reset_pkt(pkt);
+		else
+			MBX_DBG(mbx, "received pkt: type=0x%x", pkt->hdr.type);
+	}
 }
 
 static void chan_send_pkt(struct mailbox_channel *ch)
@@ -779,24 +808,28 @@ static void chan_send_pkt(struct mailbox_channel *ch)
 
 	MBX_DBG(mbx, "sending pkt: type=0x%x", pkt->hdr.type);
 
-	if( mbx->sw_chan_enabled ) {
-		/* Cannot call copy to user in this context because
-		 * the user pointer is invalid, though access_ok does
-		 * not indicate this. */
-		complete(&mbx->sw_chan_pkt_complete);
+	if(mbx->sw_mbx_enabled) {
+		if(!ch->sw_chan_ready) {
+			MBX_ERR(mbx, "RFR, sw_chan not ready.");
+			return;
+		}
+		MBX_INFO(mbx, "RFR, chan_send_pkt, calling complete(&mbx->sw_chan_tx_complete).");
+
+		/* copy to chan buf */
+		(void) memcpy(&ch->sw_chan_buf, &ch->mbc_packet, (8*sizeof(uint64_t)));
+		complete(&ch->sw_chan_complete);
 	} else {
 		/* Pushing a packet into HW. */
 		for (i = 0; i < PACKET_SIZE; i++) {
 				mailbox_reg_wr(mbx, &mbx->mbx_regs->mbr_wrdata,
 					*(((u32 *)pkt) + i));
 		}
+		reset_pkt(pkt);
+		if (ch->mbc_cur_msg)
+			ch->mbc_bytes_done += ch->mbc_packet.hdr.payload_size;
+
+		BUG_ON((mailbox_chk_err(mbx) & STATUS_FULL) != 0);
 	}
-
-	reset_pkt(pkt);
-	if (ch->mbc_cur_msg)
-		ch->mbc_bytes_done += ch->mbc_packet.hdr.payload_size;
-
-	BUG_ON((mailbox_chk_err(mbx) & STATUS_FULL) != 0);
 }
 
 static int chan_pkt2msg(struct mailbox_channel *ch)
@@ -845,19 +878,22 @@ static void chan_do_rx(struct mailbox_channel *ch)
 	bool eom;
 	int err;
 	u32 type;
-	u32 st = mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_status);
+//	u32 st = mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_status);
 
-	/* Check if a packet is ready for reading. */
-	if (st == 0xffffffff) {
-		/* Device is still being reset. */
-		needs_read = false;
-	} else if (test_bit(MBXCS_BIT_POLL_MODE, &ch->mbc_state)) {
-		needs_read = ((st & STATUS_EMPTY) == 0);
-	} else {
-		needs_read = ((st & STATUS_RTA) != 0);
-	}
+//	/* Check if a packet is ready for reading. */
+//	if (st == 0xffffffff) {
+//		/* Device is still being reset. */
+//		needs_read = false;
+//	} else if (test_bit(MBXCS_BIT_POLL_MODE, &ch->mbc_state)) {
+//		needs_read = ((st & STATUS_EMPTY) == 0);
+//	} else {
+//		needs_read = ((st & STATUS_RTA) != 0);
+//	}
 
-	if (needs_read) {
+	MBX_INFO(mbx, "RFR, outerside IF L815.");
+	if(mbx->sw_mbx_enabled) {
+//	if (needs_read) {
+		MBX_INFO(mbx, "RFR, inside IF L818.");
 		chan_recv_pkt(ch);
 		type = pkt->hdr.type & PKT_TYPE_MASK;
 		eom = ((pkt->hdr.type & PKT_TYPE_MSG_END) != 0);
@@ -867,6 +903,7 @@ static void chan_do_rx(struct mailbox_channel *ch)
 			(void) memcpy(&mbx->mbx_tst_pkt, &ch->mbc_packet,
 				sizeof(struct mailbox_pkt));
 			reset_pkt(pkt);
+//			mbx->sw_chan_rx_ready = false;
 			return;
 		case PKT_MSG_START:
 			if (ch->mbc_cur_msg) {
@@ -894,16 +931,19 @@ static void chan_do_rx(struct mailbox_channel *ch)
 				MBX_ERR(mbx, "received msg is too big");
 				reset_pkt(pkt);
 			}
+//			mbx->sw_chan_rx_ready = false;
 			break;
 		case PKT_MSG_BODY:
 			if (!ch->mbc_cur_msg) {
 				MBX_ERR(mbx, "got unexpected msg body pkt\n");
 				reset_pkt(pkt);
+//				mbx->sw_chan_rx_ready = false;
 			}
 			break;
 		default:
 			MBX_ERR(mbx, "invalid mailbox pkt type\n");
 			reset_pkt(pkt);
+//			mbx->sw_chan_rx_ready = false;
 			return;
 		}
 
@@ -1169,6 +1209,7 @@ static ssize_t mailbox_pkt_store(struct device *dev,
 	(void) memcpy(mbx->mbx_tst_pkt.body.data, buf, count);
 	mbx->mbx_tst_pkt.hdr.payload_size = count;
 	mbx->mbx_tst_pkt.hdr.type = PKT_TEST;
+    MBX_INFO(mbx, "mbc_worker complete called.");
 	complete(&mbx->mbx_tx.mbc_worker);
 	return count;
 }
@@ -1316,6 +1357,7 @@ int mailbox_request(struct platform_device *pdev, void *req, size_t reqlen,
 	}
 
 	/* Kick TX channel to try to send out msg. */
+    MBX_INFO(mbx, "mbc_worker complete called.");
 	complete(&mbx->mbx_tx.mbc_worker);
 
 	if (cb)
@@ -1371,6 +1413,7 @@ int mailbox_post(struct platform_device *pdev, u64 reqid, void *buf, size_t len)
 		free_msg(msg);
 
 	/* Kick TX channel to try to send out msg. */
+    MBX_INFO(mbx, "mbc_worker complete called.");
 	complete(&mbx->mbx_tx.mbc_worker);
 
 	return rv;
@@ -1551,56 +1594,68 @@ int mailbox_reset(struct platform_device *pdev, bool end_of_reset)
 	return ret;
 }
 
-static int mailbox_sw_transfer(struct platform_device *pdev,
-				void *args)
+static int mailbox_sw_transfer(struct platform_device *pdev, void *args)
 {
 	struct mailbox *mbx;
-
+	bool retVal = 1;
 	mbx = platform_get_drvdata(pdev);
-	mbx->sw_chan_enabled = true;
-	mbx->sw_chan_xfer_done = false;
-	mbx->sw_chan_from_ioctl = (struct sw_chan *)args;
-	mbx->sw_chan_from_ioctl->sz = 64;
+	mbx->sw_mbx_enabled = true; // never disabled after this IOCTL called, TODO.
+	MBX_INFO(mbx, "RFR: START");
 
-	MBX_INFO(mbx, "RFR: isTx: %d", mbx->sw_chan_from_ioctl->isTx);
+	struct sw_chan *p_sw_chan_st = (struct sw_chan *)args;
+	p_sw_chan_st->sz = 64;
+	MBX_INFO(mbx, "RFR: isTx: %d", p_sw_chan_st->isTx);
 
+	struct mailbox_channel *ch;
 
-	if(mbx->sw_chan_from_ioctl->isTx) {
-		// TX requires wait_for_completion
-		MBX_INFO(mbx, "RFR: TX: going to sleep addr(complete), addr(mtx): %lu, %lu",
-			 &mbx->sw_chan_pkt_complete, &mbx->mbx_tx.mbc_mutex);
-		init_completion(&mbx->sw_chan_pkt_complete);
-		wait_for_completion_interruptible(&mbx->sw_chan_pkt_complete);
-		MBX_INFO(mbx, "RFR: TX: woken up");
+	if(p_sw_chan_st->isTx)
+		ch = &mbx->mbx_tx;
+	else
+		ch = &mbx->mbx_rx;
 
-		/*
-		 * Mutex is locked in chan_send_pkt just before
-		 * waking this thread. mbx_tx.mbc_packet is a
-		 * shared resource we need to make sure is
-		 * not modified before writing to user.
-		 *
-		 * TODO: Protect mbc_packet with mutex.
-		 */
-		mutex_lock(&mbx->mbx_tx.mbc_mutex);
-		mbx->sw_chan_xfer_done = copy_to_user(mbx->sw_chan_from_ioctl->pData,
-						      &mbx->mbx_tx.mbc_packet,
-						      mbx->sw_chan_from_ioctl->sz);
-		mutex_unlock(&mbx->mbx_tx.mbc_mutex);
-		MBX_INFO(mbx, "RFR: TX: copy_to_user: %lu", mbx->sw_chan_xfer_done );
+	ch->sw_chan_from_ioctl = p_sw_chan_st;
+
+	if(ch->sw_chan_from_ioctl->isTx) {
+		ch->sw_chan_ready = true;
+
+		MBX_INFO(mbx, "RFR: *X: going to sleep");
+		/* sleep until chan_send_pkt copies to sw_chan_buf */
+		if( wait_for_completion_interruptible(&ch->sw_chan_complete) == -ERESTARTSYS ) {
+			MBX_ERR(mbx, "RFR, sw_chan_complete signalled with ERESTARTSYS.");
+			return -ERESTARTSYS;
+		}
+
+		MBX_INFO(mbx, "RFR: *X: woken up");
+		retVal = copy_to_user(ch->sw_chan_from_ioctl->pData,
+				      &ch->sw_chan_buf,
+				      ch->sw_chan_from_ioctl->sz);
+		MBX_INFO(mbx, "RFR: TX: copy_to_user: %lu", retVal);
 	} else {
-		MBX_INFO(mbx, "RFR: RX: addr(mtx): %lu",
-			 &mbx->mbx_tx.mbc_mutex);
-		// get right away
-		mutex_lock(&mbx->mbx_rx.mbc_mutex);
-		mbx->sw_chan_xfer_done = copy_from_user(&mbx->mbx_rx.mbc_packet,
-							mbx->sw_chan_from_ioctl->pData,
-							mbx->sw_chan_from_ioctl->sz);
-		mutex_unlock(&mbx->mbx_rx.mbc_mutex);
-		chan_do_rx(&mbx->mbx_rx);
-		MBX_INFO(mbx, "RFR: RX: copy_from_user: %lu", mbx->sw_chan_xfer_done );
-	}
+		/* copy into sw_chan_buf */
+		retVal = copy_from_user(&ch->sw_chan_buf,
+					ch->sw_chan_from_ioctl->pData,
+					ch->sw_chan_from_ioctl->sz);
+		MBX_INFO(mbx, "RFR: RX: copy_from_user: %lu", retVal);
 
-	return mbx->sw_chan_xfer_done;
+		ch->sw_chan_ready = true;
+
+		/* signal channel worker that we are here and the packet is ready to take */
+		MBX_INFO(mbx, "mbc_worker complete called.");
+		complete(&ch->mbc_worker);
+
+		MBX_INFO(mbx, "RFR: *X: going to sleep");
+		/* sleep until chan_recv_pkt copies from sw_chan_buf */
+		if( wait_for_completion_interruptible(&ch->sw_chan_complete) == -ERESTARTSYS ) {
+			MBX_ERR(mbx, "RFR, sw_chan_complete signalled with ERESTARTSYS.");
+			return -ERESTARTSYS;
+		}
+
+		MBX_INFO(mbx, "RFR: *X: woken up");
+	}
+	ch->sw_chan_ready = false;
+
+	MBX_INFO(mbx, "RFR: FINISH, returning : %lu", retVal);
+	return retVal;
 }
 
 /* Kernel APIs exported from this sub-device driver. */
@@ -1680,6 +1735,13 @@ static int mailbox_probe(struct platform_device *pdev)
 		MBX_ERR(mbx, "failed to init tx channel");
 		goto failed;
 	}
+
+	/* Init completion for sw channel. ??Only used for TX channel??. */
+//	mbx->sw_chan_tx_ready = false;
+//	mbx->sw_chan_rx_ready = false;
+//	init_completion(&mbx->sw_chan_tx_complete);
+//	init_completion(&mbx->sw_chan_rx_complete);
+
 	/* Dedicated thread for listening to peer request. */
 	mbx->mbx_listen_wq =
 		create_singlethread_workqueue(dev_name(&mbx->mbx_pdev->dev));

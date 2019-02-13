@@ -38,24 +38,28 @@ void fill_frequency_info(struct xclmgmt_dev *lro, struct xclmgmt_ioc_info *obj)
 
 int mgmt_sw_mailbox_tx_ioctl(struct xclmgmt_dev *lro, void *data)
 {
-	mgmt_info(lro, "mgmt_sw_mailbox_tx_ioctl called");
+	printk(KERN_INFO "mgmt_sw_mailbox_tx_ioctl START\n");
 	struct drm_xocl_sw_mailbox *args;
 	args = (struct drm_xocl_sw_mailbox *)data;
 
-	printk( "M-ioctl: dir: %i", args->isTx );
+	printk(KERN_INFO "M-ioctl: dir: %i\n", args->isTx );
 
 	// 0 is a successful transfer
-	return xocl_mailbox_sw_transfer(lro, args);
+	int ret = xocl_mailbox_sw_transfer(lro, args);
+	printk(KERN_INFO "mgmt_sw_mailbox_tx_ioctl FINISH, ret: %lu\n", ret);
+	return ret;
 }
 
 int mgmt_sw_mailbox_rx_ioctl(struct xclmgmt_dev *lro, void *data)
 {
-	mgmt_info(lro, "mgmt_sw_mailbox_rx_ioctl called");
+	mgmt_info(lro, "mgmt_sw_mailbox_rx_ioctl START");
 	struct drm_xocl_sw_mailbox *args;
 	args = (struct drm_xocl_sw_mailbox *)data;
 
-	printk( "M-ioctl: dir: %i", args->isTx );
+	printk(KERN_INFO "M-ioctl: dir: %i\n", args->isTx );
 
 	// 0 is a successful transfer
-	return xocl_mailbox_sw_transfer(lro, args);
+	int ret = xocl_mailbox_sw_transfer(lro, args);
+	printk(KERN_INFO "mgmt_sw_mailbox_rx_ioctl FINISH, ret: %lu\n", ret);
+	return ret;
 }
