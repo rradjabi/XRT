@@ -137,15 +137,10 @@ long mgmt_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	case XCLMGMT_IOCERRINFO:
 		result = err_info_ioctl(lro, (void __user *)arg);
 		break;
-	case XCLMGMT_IOCSWMAILBOXTX:
+	case XCLMGMT_IOCSWMAILBOX:
 		// give up the mutex for Mailbox ioctl
 		mutex_unlock(&lro->busy_mutex);
-		result = mgmt_sw_mailbox_tx_ioctl(lro, (void *)arg);
-		break;
-	case XCLMGMT_IOCSWMAILBOXRX:
-		// give up the mutex for Mailbox ioctl
-		mutex_unlock(&lro->busy_mutex);
-		result = mgmt_sw_mailbox_rx_ioctl(lro, (void *)arg);
+		result = mgmt_sw_mailbox_ioctl(lro, (void *)arg);
 		break;
 	default:
 		printk(KERN_DEBUG "MGMT default IOCTL request %u\n", cmd & 0xff);

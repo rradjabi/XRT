@@ -1338,10 +1338,10 @@ int xocl_usage_stat_ioctl(struct drm_device *dev, void *data,
 	return 0;
 }
 
-int xocl_sw_mailbox_tx_ioctl(struct drm_device *dev, void *data,
+int xocl_sw_mailbox_ioctl(struct drm_device *dev, void *data,
 				   struct drm_file *filp)
 {
-	printk(KERN_INFO "xocl_sw_mailbox_tx_ioctl START\n" );
+	printk(KERN_INFO "xocl_sw_mailbox_ioctl START\n" );
 	struct xocl_dev *xdev = dev->dev_private;
 
 	// cast data
@@ -1352,24 +1352,6 @@ int xocl_sw_mailbox_tx_ioctl(struct drm_device *dev, void *data,
 
 	// 0 is a successful transfer
 	int ret = xocl_mailbox_sw_transfer(xdev, args);
-	printk(KERN_INFO "xocl_sw_mailbox_tx_ioctl FINISH ret: %lu\n", ret );
-	return ret;
-}
-
-int xocl_sw_mailbox_rx_ioctl(struct drm_device *dev, void *data,
-				   struct drm_file *filp)
-{
-	printk(KERN_INFO "xocl_sw_mailbox_rx_ioctl START\n" );
-	struct xocl_dev *xdev = dev->dev_private;
-
-	// cast data
-	struct drm_xocl_sw_mailbox *args;
-	args = (struct drm_xocl_sw_mailbox *)data;
-
-	printk(KERN_INFO "U-ioctl: dir: %i\n", args->isTx );
-
-	// 0 is a successful transfer
-	int ret = xocl_mailbox_sw_transfer(xdev, args);
-	printk(KERN_INFO "xocl_sw_mailbox_rx_ioctl FINISH ret: %lu\n", ret );
+	printk(KERN_INFO "xocl_sw_mailbox_ioctl FINISH ret: %lu\n", ret );
 	return ret;
 }

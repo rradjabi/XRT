@@ -76,8 +76,7 @@
  *      xclbin image
  * 14   Write buffer from device to peer FPGA  DRM_IOCTL_XOCL_COPY_BO         drm_xocl_copy_bo
  *      buffer
- * 15   SW Mailbox Tx IOCTL                    DRM_IOCTL_XOCL_SW_MAILBOX_TX   drm_xocl_sw_mailbox
- * 16   SW Mailbox Rx IOCTL                    DRM_IOCTL_XOCL_SW_MAILBOX_RX   drm_xocl_sw_mailbox
+ * 15   SW Mailbox IOCTL                       DRM_IOCTL_XOCL_SW_MAILBOX      drm_xocl_sw_mailbox
  *
  * ==== ====================================== ============================== ==================================
  */
@@ -158,10 +157,7 @@ enum drm_xocl_ops {
 	/* Reclock through userpf*/
 	DRM_XOCL_RECLOCK,
 	/* Mailbox Tx*/
-	DRM_XOCL_SW_MAILBOX_TX,
-	/* Mailbox Rx*/
-	DRM_XOCL_SW_MAILBOX_RX,
-
+	DRM_XOCL_SW_MAILBOX,
 	DRM_XOCL_NUM_IOCTLS
 };
 
@@ -558,8 +554,6 @@ struct drm_xocl_sw_mailbox {
 						DRM_XOCL_P2P_ENABLE, struct drm_xocl_p2p_enable)
 #define DRM_IOCTL_XOCL_RECLOCK        DRM_IOWR(DRM_COMMAND_BASE + \
 					       DRM_XOCL_RECLOCK, struct drm_xocl_reclock_info)
-#define DRM_IOCTL_XOCL_SW_MAILBOX_TX  DRM_IOWR(DRM_COMMAND_BASE +		\
-						DRM_XOCL_SW_MAILBOX_TX, struct drm_xocl_sw_mailbox)
-#define DRM_IOCTL_XOCL_SW_MAILBOX_RX  DRM_IOWR(DRM_COMMAND_BASE +		\
-						DRM_XOCL_SW_MAILBOX_RX, struct drm_xocl_sw_mailbox)
+#define DRM_IOCTL_XOCL_SW_MAILBOX     DRM_IOWR(DRM_COMMAND_BASE +		\
+						DRM_XOCL_SW_MAILBOX, struct drm_xocl_sw_mailbox)
 #endif

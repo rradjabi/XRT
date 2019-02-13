@@ -159,9 +159,7 @@ int xocl_pread_unmgd_ioctl(struct drm_device *dev, void *data,
 	struct drm_file *filp);
 int xocl_usage_stat_ioctl(struct drm_device *dev, void *data,
 	struct drm_file *filp);
-int xocl_sw_mailbox_tx_ioctl(struct drm_device *dev, void *data,
-	struct drm_file *filp);
-int xocl_sw_mailbox_rx_ioctl(struct drm_device *dev, void *data,
+int xocl_sw_mailbox_ioctl(struct drm_device *dev, void *data,
 	struct drm_file *filp);
 
 void xocl_free_bo(struct drm_gem_object *obj);
