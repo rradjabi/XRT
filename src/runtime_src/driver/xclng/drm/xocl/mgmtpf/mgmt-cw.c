@@ -52,7 +52,8 @@ int mgmt_sw_mailbox_tx_ioctl(struct xclmgmt_dev *lro, void *data)
 
 int mgmt_sw_mailbox_rx_ioctl(struct xclmgmt_dev *lro, void *data)
 {
-	mgmt_info(lro, "mgmt_sw_mailbox_rx_ioctl START");
+//	mgmt_info(lro, "mgmt_sw_mailbox_rx_ioctl START");
+	printk(KERN_INFO "mgmt_sw_mailbox_rx_ioctl START\n");
 	struct drm_xocl_sw_mailbox *args;
 	args = (struct drm_xocl_sw_mailbox *)data;
 

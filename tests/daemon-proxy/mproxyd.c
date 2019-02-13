@@ -62,7 +62,7 @@ void *sw_mailbox_chan_xocl_to_xclmgmt(void *handles_void_ptr)
         args.isTx = true;
         ret = ioctl(sHandles->userHandle, DRM_IOCTL_XOCL_SW_MAILBOX_TX, &args);
         printf("[xocl-pkt-tx]\n");
-        if( ret < 0 ) {
+        if( ret != 0 ) {
             printf("user-transfer Errno: %s\n", strerror(errno));
             return;
         }
@@ -70,7 +70,7 @@ void *sw_mailbox_chan_xocl_to_xclmgmt(void *handles_void_ptr)
         args.isTx = false;
         ret = ioctl(sHandles->mgmtHandle, XCLMGMT_IOCSWMAILBOXRX, &args);
         printf("[mgmt-pkt-rx]\n");
-        if( ret < 0 ) {
+        if( ret != 0 ) {
             printf("mgmt-transfer Errno: %s\n", strerror(errno));
             return;
         }
@@ -92,7 +92,7 @@ void *sw_mailbox_chan_xclmgmt_to_xocl(void *handles_void_ptr)
         args.isTx = true;
         ret = ioctl(sHandles->mgmtHandle, XCLMGMT_IOCSWMAILBOXTX, &args);
         printf("                [mgmt-pkt-tx]\n");
-        if( ret < 0 ) {
+        if( ret != 0 ) {
             printf("user-transfer Errno: %s\n", strerror(errno));
             return;
         }
@@ -100,7 +100,7 @@ void *sw_mailbox_chan_xclmgmt_to_xocl(void *handles_void_ptr)
         args.isTx = false;
         ret = ioctl(sHandles->userHandle, DRM_IOCTL_XOCL_SW_MAILBOX_RX, &args);
         printf("                [xocl-pkt-rx]\n");
-        if( ret < 0 ) {
+        if( ret != 0 ) {
             printf("mgmt-transfer Errno: %s\n", strerror(errno));
             return;
         }
@@ -117,11 +117,6 @@ int main(void)
     if( uHandle < 0 )
         printf( "Error openning /dev/dri/renderD129\n" );
 
-//    int uH2 = 0;
-//    uH2 = open("/dev/dri/renderD129", O_RDWR);
-//    if( uH2< 0 )
-//        printf( "Error openning uH2 /dev/dri/renderD129\n" );
-    
     // mgmt setup
     int mHandle = 0;
     mHandle = open("/dev/xclmgmt2560", O_RDWR);
