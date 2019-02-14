@@ -761,14 +761,15 @@ static void chan_send_pkt(struct mailbox_channel *ch)
 	} else {
 		/* Pushing a packet into HW. */
 		for (i = 0; i < PACKET_SIZE; i++) {
-				mailbox_reg_wr(mbx, &mbx->mbx_regs->mbr_wrdata,
-					*(((u32 *)pkt) + i));
+			mailbox_reg_wr(mbx, &mbx->mbx_regs->mbr_wrdata,
+				*(((u32 *)pkt) + i));
 		}
 	}
-		reset_pkt(pkt);
-		if (ch->mbc_cur_msg)
-			ch->mbc_bytes_done += ch->mbc_packet.hdr.payload_size;
+	reset_pkt(pkt);
+	if (ch->mbc_cur_msg)
+		ch->mbc_bytes_done += ch->mbc_packet.hdr.payload_size;
 
+	if(!mbx->sw_mbx_enabled)
 		BUG_ON((mailbox_chk_err(mbx) & STATUS_FULL) != 0);
 }
 
