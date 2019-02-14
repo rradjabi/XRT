@@ -874,24 +874,25 @@ static void chan_do_rx(struct mailbox_channel *ch)
 	bool eom;
 	int err;
 	u32 type;
-//	u32 st = mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_status);
 
-//	/* Check if a packet is ready for reading. */
-//	if (st == 0xffffffff) {
-//		/* Device is still being reset. */
-//		needs_read = false;
-//	} else if (test_bit(MBXCS_BIT_POLL_MODE, &ch->mbc_state)) {
-//		needs_read = ((st & STATUS_EMPTY) == 0);
-//	} else {
-//		needs_read = ((st & STATUS_RTA) != 0);
-//	}
+	if(!mbx->sw_mbx_enabled) {
+		u32 st = mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_status);
+
+		/* Check if a packet is ready for reading. */
+		if (st == 0xffffffff) {
+			/* Device is still being reset. */
+			needs_read = false;
+		} else if (test_bit(MBXCS_BIT_POLL_MODE, &ch->mbc_state)) {
+			needs_read = ((st & STATUS_EMPTY) == 0);
+		} else {
+			needs_read = ((st & STATUS_RTA) != 0);
+		}
+	} else {
+		needs_read = ch->sw_chan_ready;
+	}
 
 	MBX_INFO(mbx, "RFR, outerside IF L815.");
-	if(mbx->sw_mbx_enabled) {
-	//	if (needs_read) {
-		if(!ch->sw_chan_ready)
-			return;
-
+	if (needs_read) {
 		MBX_INFO(mbx, "RFR, inside IF L818.");
 		chan_recv_pkt(ch);
 		type = pkt->hdr.type & PKT_TYPE_MASK;
@@ -1027,46 +1028,45 @@ static void check_tx_stall(struct mailbox_channel *ch)
 static void chan_do_tx(struct mailbox_channel *ch)
 {
 	struct mailbox *mbx = ch->mbc_parent;
-
-//	u32 st = mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_status);
-
-//	/* Check if a packet has been read by peer. */
-//	if ((st != 0xffffffff) && ((st & STATUS_STA) != 0)) {
-//	{
-//		clear_bit(MBXCS_BIT_CHK_STALL, &ch->mbc_state);
 	if(mbx->sw_mbx_enabled) {
 		if(!ch->sw_chan_ready)
-			return;
+			goto end;
+	} else {
+		u32 st = mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_status);
 
-		clear_bit(MBXCS_BIT_CHK_STALL, &ch->mbc_state);
-		/*
-		 * The mailbox is free for sending new pkt now. See if we
-		 * have something to send.
-		 */
-
-		/* Finished sending a whole msg, call it done. */
-		if (ch->mbc_cur_msg &&
-			(ch->mbc_cur_msg->mbm_len == ch->mbc_bytes_done)) {
-			chan_msg_done(ch, 0);
-		}
-
-		if (!ch->mbc_cur_msg)
-			ch->mbc_cur_msg = chan_msg_dequeue(ch, INVALID_MSG_ID);
-
-		if (ch->mbc_cur_msg) {
-			MBX_ERR(mbx, "chan_msg2pkt call, mbc_bytes_done: %lu", ch->mbc_bytes_done);
-			chan_msg2pkt(ch);
-		} else if (valid_pkt(&mbx->mbx_tst_pkt)) {
-			(void) memcpy(&ch->mbc_packet, &mbx->mbx_tst_pkt,
-				sizeof(struct mailbox_pkt));
-			reset_pkt(&mbx->mbx_tst_pkt);
-		} else {
-			return; /* Nothing to send. */
-		}
-
-		chan_send_pkt(ch);
+		/* Check if a packet has not been read by peer. */
+		if(!((st != 0xffffffff) && ((st & STATUS_STA) != 0)))
+			goto end;
 	}
 
+	clear_bit(MBXCS_BIT_CHK_STALL, &ch->mbc_state);
+	/*
+	 * The mailbox is free for sending new pkt now. See if we
+	 * have something to send.
+	 */
+
+	/* Finished sending a whole msg, call it done. */
+	if (ch->mbc_cur_msg &&
+		(ch->mbc_cur_msg->mbm_len == ch->mbc_bytes_done)) {
+		chan_msg_done(ch, 0);
+	}
+
+	if (!ch->mbc_cur_msg)
+		ch->mbc_cur_msg = chan_msg_dequeue(ch, INVALID_MSG_ID);
+
+	if (ch->mbc_cur_msg) {
+		MBX_ERR(mbx, "chan_msg2pkt call, mbc_bytes_done: %lu", ch->mbc_bytes_done);
+		chan_msg2pkt(ch);
+	} else if (valid_pkt(&mbx->mbx_tst_pkt)) {
+		(void) memcpy(&ch->mbc_packet, &mbx->mbx_tst_pkt,
+			sizeof(struct mailbox_pkt));
+		reset_pkt(&mbx->mbx_tst_pkt);
+	} else {
+		return; /* Nothing to send. */
+	}
+
+	chan_send_pkt(ch);
+end:
 	/* Handle timer event. */
 	if (test_bit(MBXCS_BIT_TICK, &ch->mbc_state)) {
 		timeout_msg(ch);
