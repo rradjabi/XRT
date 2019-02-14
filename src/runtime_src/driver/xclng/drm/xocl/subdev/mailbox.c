@@ -263,10 +263,6 @@ struct mailbox_channel {
 	 * Software channel settings
 	 */
 	bool sw_chan_ready;
-//	bool sw_chan_rx_ready;
-//	bool sw_chan_tx_ready;
-//	struct completion sw_chan_tx_complete;
-//	struct completion sw_chan_rx_complete;
 	struct completion sw_chan_complete;
 	struct sw_chan *sw_chan_from_ioctl;
 	uint64_t sw_chan_buf[8];
@@ -392,8 +388,7 @@ irqreturn_t mailbox_isr(int irq, void *arg)
 	u32 is = mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_is);
 
 	while (is) {
-//		MBX_DBG(mbx, "intr status: 0x%x", is);
-	    MBX_INFO(mbx, "intr status: 0x%x", is);
+		MBX_DBG(mbx, "intr status: 0x%x", is);
 
 		if ((is & FLAG_STI) != 0) {
 			/* A packet has been sent successfully. */
@@ -1043,7 +1038,7 @@ static void chan_do_tx(struct mailbox_channel *ch)
 		if(!ch->sw_chan_ready)
 			return;
 
-//		clear_bit(MBXCS_BIT_CHK_STALL, &ch->mbc_state);
+		clear_bit(MBXCS_BIT_CHK_STALL, &ch->mbc_state);
 		/*
 		 * The mailbox is free for sending new pkt now. See if we
 		 * have something to send.
@@ -1075,7 +1070,7 @@ static void chan_do_tx(struct mailbox_channel *ch)
 	/* Handle timer event. */
 	if (test_bit(MBXCS_BIT_TICK, &ch->mbc_state)) {
 		timeout_msg(ch);
-//		check_tx_stall(ch); /*RFR Disable Stall Check for SW_CHAN Mode */
+		check_tx_stall(ch);
 		clear_bit(MBXCS_BIT_TICK, &ch->mbc_state);
 	}
 }
