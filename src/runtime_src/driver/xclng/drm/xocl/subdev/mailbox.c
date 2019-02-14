@@ -1739,12 +1739,6 @@ static int mailbox_probe(struct platform_device *pdev)
 		goto failed;
 	}
 
-	/* Init completion for sw channel. ??Only used for TX channel??. */
-//	mbx->sw_chan_tx_ready = false;
-//	mbx->sw_chan_rx_ready = false;
-//	init_completion(&mbx->sw_chan_tx_complete);
-//	init_completion(&mbx->sw_chan_rx_complete);
-
 	/* Dedicated thread for listening to peer request. */
 	mbx->mbx_listen_wq =
 		create_singlethread_workqueue(dev_name(&mbx->mbx_pdev->dev));
@@ -1768,9 +1762,6 @@ static int mailbox_probe(struct platform_device *pdev)
 		if (ret != 0)
 			goto failed;
 	}
-
-//	MBX_INFO(mbx, "Enabled timer-driven mode");
-//	mailbox_disable_intr_mode(mbx);
 
 	xocl_subdev_register(pdev, XOCL_SUBDEV_MAILBOX, &mailbox_ops);
 
