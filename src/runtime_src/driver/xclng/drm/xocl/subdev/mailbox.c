@@ -722,7 +722,8 @@ static void chan_recv_pkt(struct mailbox_channel *ch)
 		MBX_INFO(mbx, "RFR, chan_recv_pkt calling complete(&mbx->sw_chan_rx_complete).");
 
 		/* copy from chan buf */
-		(void) memcpy(&ch->mbc_packet, &ch->sw_chan_buf, (8*sizeof(uint64_t)));// ch->sw_chan_from_ioctl->sz);
+		(void) memcpy(&ch->mbc_packet, &ch->sw_chan_buf, sizeof(struct mailbox_pkt));
+		MBX_DBG(mbx, "received pkt: type=0x%x", pkt->hdr.type);
 		complete(&ch->sw_chan_complete);
 	} else {
 		/* Picking up a packet from HW. */
@@ -760,7 +761,7 @@ static void chan_send_pkt(struct mailbox_channel *ch)
 		MBX_INFO(mbx, "RFR, chan_send_pkt, calling complete(&mbx->sw_chan_tx_complete).");
 
 		/* copy to chan buf */
-		(void) memcpy(&ch->sw_chan_buf, &ch->mbc_packet, (8*sizeof(uint64_t)));
+		(void) memcpy(&ch->sw_chan_buf, &ch->mbc_packet, sizeof(struct mailbox_pkt));
 		complete(&ch->sw_chan_complete);
 	} else {
 		/* Pushing a packet into HW. */
@@ -768,12 +769,12 @@ static void chan_send_pkt(struct mailbox_channel *ch)
 				mailbox_reg_wr(mbx, &mbx->mbx_regs->mbr_wrdata,
 					*(((u32 *)pkt) + i));
 		}
+	}
 		reset_pkt(pkt);
 		if (ch->mbc_cur_msg)
 			ch->mbc_bytes_done += ch->mbc_packet.hdr.payload_size;
 
 		BUG_ON((mailbox_chk_err(mbx) & STATUS_FULL) != 0);
-	}
 }
 
 static int chan_pkt2msg(struct mailbox_channel *ch)
@@ -835,7 +836,10 @@ static void chan_do_rx(struct mailbox_channel *ch)
 
 	MBX_INFO(mbx, "RFR, outerside IF L815.");
 	if(mbx->sw_mbx_enabled) {
-//	if (needs_read) {
+	//	if (needs_read) {
+		if(!ch->sw_chan_ready)
+			return;
+
 		MBX_INFO(mbx, "RFR, inside IF L818.");
 		chan_recv_pkt(ch);
 		type = pkt->hdr.type & PKT_TYPE_MASK;
@@ -846,7 +850,6 @@ static void chan_do_rx(struct mailbox_channel *ch)
 			(void) memcpy(&mbx->mbx_tst_pkt, &ch->mbc_packet,
 				sizeof(struct mailbox_pkt));
 			reset_pkt(pkt);
-//			mbx->sw_chan_rx_ready = false;
 			return;
 		case PKT_MSG_START:
 			if (ch->mbc_cur_msg) {
@@ -870,19 +873,16 @@ static void chan_do_rx(struct mailbox_channel *ch)
 				MBX_ERR(mbx, "received msg is too big");
 				reset_pkt(pkt);
 			}
-//			mbx->sw_chan_rx_ready = false;
 			break;
 		case PKT_MSG_BODY:
 			if (!ch->mbc_cur_msg) {
 				MBX_ERR(mbx, "got unexpected msg body pkt\n");
 				reset_pkt(pkt);
-//				mbx->sw_chan_rx_ready = false;
 			}
 			break;
 		default:
 			MBX_ERR(mbx, "invalid mailbox pkt type\n");
 			reset_pkt(pkt);
-//			mbx->sw_chan_rx_ready = false;
 			return;
 		}
 
@@ -971,12 +971,18 @@ static void check_tx_stall(struct mailbox_channel *ch)
 static void chan_do_tx(struct mailbox_channel *ch)
 {
 	struct mailbox *mbx = ch->mbc_parent;
-	u32 st = mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_status);
 
-	/* Check if a packet has been read by peer. */
-	if ((st != 0xffffffff) && ((st & STATUS_STA) != 0)) {
-		clear_bit(MBXCS_BIT_CHK_STALL, &ch->mbc_state);
+//	u32 st = mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_status);
 
+//	/* Check if a packet has been read by peer. */
+//	if ((st != 0xffffffff) && ((st & STATUS_STA) != 0)) {
+//	{
+//		clear_bit(MBXCS_BIT_CHK_STALL, &ch->mbc_state);
+	if(mbx->sw_mbx_enabled) {
+		if(!ch->sw_chan_ready)
+			return;
+
+//		clear_bit(MBXCS_BIT_CHK_STALL, &ch->mbc_state);
 		/*
 		 * The mailbox is free for sending new pkt now. See if we
 		 * have something to send.
@@ -992,6 +998,7 @@ static void chan_do_tx(struct mailbox_channel *ch)
 			ch->mbc_cur_msg = chan_msg_dequeue(ch, INVALID_MSG_ID);
 
 		if (ch->mbc_cur_msg) {
+			MBX_ERR(mbx, "chan_msg2pkt call, mbc_bytes_done: %lu", ch->mbc_bytes_done);
 			chan_msg2pkt(ch);
 		} else if (valid_pkt(&mbx->mbx_tst_pkt)) {
 			(void) memcpy(&ch->mbc_packet, &mbx->mbx_tst_pkt,
@@ -1007,7 +1014,7 @@ static void chan_do_tx(struct mailbox_channel *ch)
 	/* Handle timer event. */
 	if (test_bit(MBXCS_BIT_TICK, &ch->mbc_state)) {
 		timeout_msg(ch);
-		check_tx_stall(ch);
+//		check_tx_stall(ch); /*RFR Disable Stall Check for SW_CHAN Mode */
 		clear_bit(MBXCS_BIT_TICK, &ch->mbc_state);
 	}
 }
@@ -1202,6 +1209,8 @@ static void dft_req_msg_cb(void *arg, void *data, size_t len, u64 id, int err)
 		respmsg = chan_msg_dequeue(&mbx->mbx_rx, reqmsg->mbm_req_id);
 		if (respmsg)
 			msg_done(respmsg, err);
+		MBX_ERR(mbx,
+			"msg_done error, err=%d", err);
 	}
 }
 
@@ -1504,7 +1513,6 @@ static int mailbox_sw_transfer(struct platform_device *pdev, void *args)
 	MBX_INFO(mbx, "RFR: START");
 
 	struct sw_chan *p_sw_chan_st = (struct sw_chan *)args;
-	p_sw_chan_st->sz = 64;
 	MBX_INFO(mbx, "RFR: isTx: %d", p_sw_chan_st->isTx);
 
 	struct mailbox_channel *ch;
@@ -1529,13 +1537,13 @@ static int mailbox_sw_transfer(struct platform_device *pdev, void *args)
 		MBX_INFO(mbx, "RFR: *X: woken up");
 		retVal = copy_to_user(ch->sw_chan_from_ioctl->pData,
 				      &ch->sw_chan_buf,
-				      ch->sw_chan_from_ioctl->sz);
+				      sizeof(struct mailbox_pkt));
 		MBX_INFO(mbx, "RFR: TX: copy_to_user: %lu", retVal);
 	} else {
 		/* copy into sw_chan_buf */
 		retVal = copy_from_user(&ch->sw_chan_buf,
 					ch->sw_chan_from_ioctl->pData,
-					ch->sw_chan_from_ioctl->sz);
+					sizeof(struct mailbox_pkt));
 		MBX_INFO(mbx, "RFR: RX: copy_from_user: %lu", retVal);
 
 		ch->sw_chan_ready = true;
@@ -1659,6 +1667,9 @@ static int mailbox_probe(struct platform_device *pdev)
 		if (ret != 0)
 			goto failed;
 	}
+
+//	MBX_INFO(mbx, "Enabled timer-driven mode");
+//	mailbox_disable_intr_mode(mbx);
 
 	xocl_subdev_register(pdev, XOCL_SUBDEV_MAILBOX, &mailbox_ops);
 
