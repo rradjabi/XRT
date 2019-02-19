@@ -1834,32 +1834,6 @@ static int icap_download_bitstream_axlf(struct platform_device *pdev,
 			err = -EFAULT;
 			goto done;
 		}
-
-		peer_connected = xocl_mailbox_check_peer(xdev);
-		ICAP_INFO(icap, "%s peer_connected 0x%x", __func__, peer_connected);
-		if(peer_connected < 0) {
-			err = -ENODEV;
-			goto done;
-		}
-
-		if(!(peer_connected & 0x1)){
-			ICAP_ERR(icap, "%s fail to find peer, operation abort!", __func__);
-			err = -EFAULT;
-			goto done;
-		}
-
-		if((peer_connected & 0xF) == MB_PEER_SAMEDOM_CONNECTED){
-			data_len = sizeof(struct mailbox_req);
-			mb_req->req = MAILBOX_REQ_LOAD_XCLBIN_KADDR;
-			mb_req->data_ptr = (void*)mb_req->data;
-
-		} else if ((peer_connected & 0xF) == MB_PEER_CONNECTED){
-			data_len = sizeof(struct mailbox_req) + bin_obj.m_header.m_length;
-			mb_req->req = MAILBOX_REQ_LOAD_XCLBIN;
-		}
-
-		mb_req->data_total_len = data_len;
-		(void) xocl_peer_request(xdev,
 			mb_req, data_len, &msg, &resplen, NULL, NULL);
 
 		if(msg != 0){
