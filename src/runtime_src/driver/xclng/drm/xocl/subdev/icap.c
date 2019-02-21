@@ -1802,7 +1802,7 @@ static int icap_download_bitstream_axlf(struct platform_device *pdev,
 			err = -EFAULT;
 			goto done;
 		}
-#if 1
+#if 0
 		offset = 0;
 
 		while(offset<bin_obj.m_header.m_length){
@@ -1820,8 +1820,10 @@ static int icap_download_bitstream_axlf(struct platform_device *pdev,
 			//memcpy(&mb_xclbin_req.u.data_buf.priv_data, &bin_obj.m_header.uuid, 8);
 			memcpy(mb_xclbin_req.u.data_buf.data, ((char *)axlf)+offset, data_sz);
 
-			(void) xocl_peer_request(xdev,
-				&mb_xclbin_req, &msg, &resplen, NULL, NULL);
+			int pr_rval = xocl_peer_request(xdev,&mb_xclbin_req, &msg, &resplen, NULL, NULL);
+			if( pr_rval != 0 )
+				break;
+
 			if(msg != 0)
 				break;
 			offset += data_sz;
