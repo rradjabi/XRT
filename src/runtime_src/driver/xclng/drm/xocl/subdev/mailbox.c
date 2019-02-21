@@ -206,6 +206,11 @@ enum packet_type {
 	PKT_MSG_BODY
 };
 
+enum sw_chan_state {
+	MSG_NEED_SIZE = 0,
+	MSG_NEED_DATA
+};
+
 /* Lower 8 bits for type, the rest for flags. */
 #define	PKT_TYPE_MASK		0xff
 #define	PKT_TYPE_MSG_END	(1 << 31)
@@ -266,6 +271,7 @@ struct mailbox_channel {
 	struct completion sw_chan_complete;
 	struct sw_chan *sw_chan_from_ioctl;
 	uint64_t sw_chan_buf[8];
+	enum sw_chan_state sw_chan_msg_state;
 };
 
 
@@ -703,6 +709,7 @@ static int chan_init(struct mailbox *mbx, char *nm,
 	queue_work(ch->mbc_wq, &ch->mbc_work);
 
 	ch->sw_chan_ready = false;
+	ch->sw_chan_msg_state = MSG_NEED_SIZE;
 	init_completion(&ch->sw_chan_complete);
 
 	/* One timer for one channel. */
@@ -1030,8 +1037,44 @@ static void chan_do_tx(struct mailbox_channel *ch)
 {
 	struct mailbox *mbx = ch->mbc_parent;
 	if(mbx->sw_mbx_enabled) {
-		if(!ch->sw_chan_ready)
+		MBX_ERR(mbx, "#1");
+		if(!ch->sw_chan_ready) {
+			MBX_ERR(mbx, "#2");
 			goto end;
+		}
+		MBX_ERR(mbx, "#3");
+		if(!ch->mbc_cur_msg) {
+			MBX_ERR(mbx, "#3.1");
+			ch->mbc_cur_msg = chan_msg_dequeue(ch, INVALID_MSG_ID);
+			MBX_ERR(mbx, "#4");
+			if(ch->sw_chan_msg_state != MSG_NEED_SIZE) {
+				MBX_ERR(mbx, "#5");
+				goto end;
+			}
+
+			MBX_ERR(mbx, "#6");
+			/* can't do this assignment in worker thread . ch->sw_chan_from_ioctl->flags = ch->mbc_cur_msg->mbm_len;*/
+			struct sw_chan *p_args;
+			void *ptr = &ch->sw_chan_buf;
+			p_args = (struct sw_chan *)ptr;
+			if( ch->mbc_cur_msg == NULL ) {
+				MBX_ERR(mbx, "#6.1");
+				goto end;
+			}
+
+			MBX_ERR(mbx, "#7 ch->mbc_cur_msg->mbm_len %lu",ch->mbc_cur_msg->mbm_len);
+			p_args->flags = ch->mbc_cur_msg->mbm_len;
+			MBX_ERR(mbx, "#7.1");
+//			goto end;
+//			chan_send_pkt(ch); // what happens to the previously queued pkt?
+			MBX_ERR(mbx, "#8");
+//			goto end;
+			complete(&ch->sw_chan_complete);
+			MBX_ERR(mbx, "#8.1");
+			goto end;
+		}
+		MBX_ERR(mbx, "#9");
+		goto end;
 	} else {
 		u32 st = mailbox_reg_rd(mbx, &mbx->mbx_regs->mbr_status);
 
@@ -1039,6 +1082,8 @@ static void chan_do_tx(struct mailbox_channel *ch)
 		if(!((st != 0xffffffff) && ((st & STATUS_STA) != 0)))
 			goto end;
 	}
+
+	MBX_ERR(mbx, "#10");
 
 	clear_bit(MBXCS_BIT_CHK_STALL, &ch->mbc_state);
 	/*
@@ -1374,6 +1419,11 @@ int mailbox_request(struct platform_device *pdev, void *req, size_t reqlen,
 		*resplen = respmsg->mbm_len;
 
 	free_msg(respmsg);
+
+	/* Sleep so the next request doesn't come before the response.
+	 * 10 ms was too little, 20 ms works.
+	 */
+	msleep_interruptible(20);
 	return rv;
 
 fail:
@@ -1622,17 +1672,34 @@ static int mailbox_sw_transfer(struct platform_device *pdev, void *args)
 	if(ch->sw_chan_from_ioctl->isTx) {
 		ch->sw_chan_ready = true;
 
-		MBX_INFO(mbx, "RFR: *X: going to sleep");
+		/* must wake the worker thread */
+		complete(&ch->mbc_worker);
+
+		MBX_INFO(mbx, "RFR: TX: going to sleep");
 		/* sleep until chan_send_pkt copies to sw_chan_buf */
 		if( wait_for_completion_interruptible(&ch->sw_chan_complete) == -ERESTARTSYS ) {
 			MBX_ERR(mbx, "RFR, sw_chan_complete signalled with ERESTARTSYS.");
 			return -ERESTARTSYS;
 		}
 
-		MBX_INFO(mbx, "RFR: *X: woken up");
-		retVal = copy_to_user(ch->sw_chan_from_ioctl->pData,
-				      &ch->sw_chan_buf,
-				      sizeof(struct mailbox_pkt));
+		MBX_INFO(mbx, "RFR: TX: woken up");
+		if( ch->sw_chan_msg_state == MSG_NEED_SIZE ) {
+			struct sw_chan *p_args;
+			void *ptr = &ch->sw_chan_buf;
+			p_args = (struct sw_chan *)ptr;
+			MBX_ERR(mbx, "ch->sw_chan_msg_state == MSG_NEED_SIZE, flags val: %lu", p_args->flags);
+			retVal = copy_to_user(ch->sw_chan_from_ioctl->pData,//&ch->sw_chan_from_ioctl->flags,
+					      &p_args->flags,
+					      sizeof(size_t));
+		} else if( ch->sw_chan_msg_state == MSG_NEED_DATA ) {
+			MBX_ERR(mbx, "ch->sw_chan_msg_state == MSG_NEED_DATA");
+			retVal = copy_to_user(ch->sw_chan_from_ioctl->pData,
+					      &ch->sw_chan_buf,
+					      sizeof(struct mailbox_pkt));
+		} else {
+			MBX_ERR(mbx, "Unexpected sw_chan_msg_state.");
+			return -EINVAL;
+		}
 		MBX_INFO(mbx, "RFR: TX: copy_to_user: %lu", retVal);
 	} else {
 		/* copy into sw_chan_buf */
@@ -1647,14 +1714,14 @@ static int mailbox_sw_transfer(struct platform_device *pdev, void *args)
 		MBX_INFO(mbx, "mbc_worker complete called.");
 		complete(&ch->mbc_worker);
 
-		MBX_INFO(mbx, "RFR: *X: going to sleep");
+		MBX_INFO(mbx, "RFR: RX: going to sleep");
 		/* sleep until chan_recv_pkt copies from sw_chan_buf */
 		if( wait_for_completion_interruptible(&ch->sw_chan_complete) == -ERESTARTSYS ) {
 			MBX_ERR(mbx, "RFR, sw_chan_complete signalled with ERESTARTSYS.");
 			return -ERESTARTSYS;
 		}
 
-		MBX_INFO(mbx, "RFR: *X: woken up");
+		MBX_INFO(mbx, "RFR: RX: woken up");
 	}
 	ch->sw_chan_ready = false;
 
