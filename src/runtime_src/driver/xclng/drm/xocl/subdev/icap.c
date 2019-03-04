@@ -1848,15 +1848,19 @@ static int icap_download_bitstream_axlf(struct platform_device *pdev,
 			goto done;
 		}
 
-		if((peer_connected & 0xF) == MB_PEER_SAMEDOM_CONNECTED){
-			data_len = sizeof(struct mailbox_req);
-			mb_req->req = MAILBOX_REQ_LOAD_XCLBIN_KADDR;
-			mb_req->data_ptr = (void*)mb_req->data;
+//		if((peer_connected & 0xF) == MB_PEER_SAMEDOM_CONNECTED){
+//			data_len = sizeof(struct mailbox_req);
+//			mb_req->req = MAILBOX_REQ_LOAD_XCLBIN_KADDR;
+//			mb_req->data_ptr = (void*)mb_req->data;
 
-		} else if ((peer_connected & 0xF) == MB_PEER_CONNECTED){
-			data_len = sizeof(struct mailbox_req) + bin_obj.m_header.m_length;
-			mb_req->req = MAILBOX_REQ_LOAD_XCLBIN;
-		}
+//		} else if ((peer_connected & 0xF) == MB_PEER_CONNECTED){
+//			data_len = sizeof(struct mailbox_req) + bin_obj.m_header.m_length;
+//			mb_req->req = MAILBOX_REQ_LOAD_XCLBIN;
+//		}
+
+		data_len = sizeof(struct mailbox_req) + bin_obj.m_header.m_length;
+		mb_req->req = MAILBOX_REQ_LOAD_XCLBIN;
+		printk(KERN_INFO "RFR, data_len: %i\n", data_len);
 
 		mb_req->data_total_len = data_len;
 		(void) xocl_peer_request(xdev,
