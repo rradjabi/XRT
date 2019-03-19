@@ -1,0 +1,6 @@
+src/runtime_src/driver/xclng/drm/xocl
+src/runtime_src/driver/xclng/drm/xocl/lib
+src/runtime_src/driver/xclng/drm/xocl/lib/libqdma
+src/runtime_src/driver/xclng/drm/xocl/mgmtpf
+src/runtime_src/driver/xclng/drm/xocl/userpf
+src/runtime_src/driver/xclng/include
