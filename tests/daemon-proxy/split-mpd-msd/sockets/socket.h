@@ -2,11 +2,12 @@
 #include <string.h>	//strlen
 #include <sys/socket.h>	//socket
 #include <arpa/inet.h>	//inet_addr
+#include <unistd.h>
 
 
 #define MSG_SZ 128
 
-int socket_client_init( int &sock )
+int socket_client_init( int &sock, const int port )
 {
 	struct sockaddr_in server;
 
@@ -20,7 +21,7 @@ int socket_client_init( int &sock )
 	
 	server.sin_addr.s_addr = inet_addr("127.0.0.1");
 	server.sin_family = AF_INET;
-	server.sin_port = htons( 8888 );
+	server.sin_port = htons( port );
 
 	//Connect to remote server
 	if (connect(sock , (struct sockaddr *)&server , sizeof(server)) < 0)
@@ -51,7 +52,7 @@ int socket_client_recv( const int &sock, char *buffer )
     return read_size;
 }
 
-int socket_server_init( int &sock, int &client_sock )
+int socket_server_init( int &sock, int &client_sock, const int port )
 {
 	struct sockaddr_in server, client;
     //Create socket
@@ -65,7 +66,7 @@ int socket_server_init( int &sock, int &client_sock )
     //Prepare the sockaddr_in structure
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = INADDR_ANY;
-    server.sin_port = htons( 8888 );
+    server.sin_port = htons( port );
     
     //Bind
     if( bind(sock,(struct sockaddr *)&server , sizeof(server)) < 0)
@@ -95,8 +96,4 @@ int socket_server_init( int &sock, int &client_sock )
 	return 0;
 }
  
-
-//int socket_server_recv( const int &sock )
-
-
 
