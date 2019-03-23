@@ -29,46 +29,13 @@
 #include <getopt.h>
 
 #include "xclhal2.h"
-#include "sockets/socket.h"
+#include "common.h"
 
 #define INIT_BUF_SZ 64
 
-char CMD_TEST[] = "CMD_TEST\0";
-char CMD_COMPLETE[] = "CMD_COMPLETE\0";
-char CMD_DATA_READY[] = "CMD_DATA_READY\0";
-char CMD_RESPONSE[] = "CMD_RESPONSE\0";
-
-
 xclDeviceHandle uHandle;
 pthread_t mpd_tx_id;
-pthread_t msd_rx_id;
-
-struct s_handle {
-        xclDeviceHandle uDevHandle;
-};
-
-struct drm_xocl_sw_mailbox {
-    uint64_t flags;
-    uint32_t *data;
-    bool is_tx;
-    size_t sz;
-    uint64_t id;
-};
-
-int resize_buffer( uint32_t *&buf, const size_t new_sz )
-{
-    if( buf != NULL ) {
-        free(buf);
-        buf = NULL;
-    }
-    buf = (uint32_t *)malloc( new_sz );
-    if( buf == NULL ) {
-        std::cout << "alloc failed \n";
-        return -1;
-    }
-
-    return 0;
-}
+pthread_t mpd_rx_id;
 
 void *mpd_tx(void *handle_ptr)
 {
@@ -81,43 +48,40 @@ void *mpd_tx(void *handle_ptr)
     args.data = (uint32_t *)malloc(prev_sz);
 
     int sock, read_size;
-    socket_client_init( sock, 8888 );
+    socket_client_init( sock, PORT_MPD_TO_MSD );
     char message[MSG_SZ], server_reply[MSG_SZ];
-    while(1)
-    {
-        printf("press any key: ");
-        scanf("%s" , message);
-        send( sock, CMD_TEST, sizeof(CMD_TEST), 0 );
-        int read_size = recv( sock, server_reply, MSG_SZ, 0 );
-        if( read_size == 0 )
-                break;
+    
+    //~ while(1) { /* some handshake or synchronization can go here */
+        //~ printf("press any key: ");
+        //~ scanf("%s" , message);
+        //~ send( sock, CMD_TEST, sizeof(CMD_TEST), 0 );
+        //~ int read_size = recv( sock, server_reply, MSG_SZ, 0 );
+        //~ if( read_size == 0 )
+            //~ break;
 
-        puts("Server reply :");
-        puts(server_reply);
-        break;
-    }
+        //~ puts("Server reply :");
+        //~ puts(server_reply);
+        //~ break;
+    //~ }
 
     std::cout << "[XOCL->XCLMGMT Intercept ON (HAL)]\n";
     for( ;; ) {
-        std::cout << "MPD-dbg-00\n";
-        args.is_tx = true;
+        std::cout << "MPD-TX (1) MPD TX IOCTL \n";
         args.sz = prev_sz;
         ret = xclMPD(handle, &args);
-        std::cout << "MPD-dbg-01\n";
         if( ret != 0 ) {
-            // sw channel xfer error 
-            if( errno == EMSGSIZE ) {
-                // buffer was of insufficient size, resizing
-                if( resize_buffer( args.data, args.sz ) != 0 ) {
-                    std::cout << "MPD: resize_buffer() failed...exiting\n";
-                    exit(1);
-                }
-                prev_sz = args.sz; // store the newly alloc'd size
-                ret = xclMPD(handle, &args);
-            } else {
+            if( errno != EMSGSIZE ) {
                 std::cout << "MPD: transfer failed for other reason\n";
                 exit(1);
             }
+
+            if( resize_buffer( args.data, args.sz ) != 0 ) {
+                std::cout << "MPD: resize_buffer() failed...exiting\n";
+                exit(1);
+            }
+
+            prev_sz = args.sz; // store the newly alloc'd size
+            ret = xclMPD(handle, &args);
 
             if( ret != 0 ) {
                 std::cout << "MPD: second transfer failed, exiting.\n";
@@ -125,73 +89,84 @@ void *mpd_tx(void *handle_ptr)
             }
         }
         std::cout << "[MPD-TX]\n";
-
+        
+        std::cout << "MPD-TX (2) write payload and args to file \n";
+        write_data( &args, "/tmp/mpd_tx_msg_bin" );
+        write_args( &args, "/tmp/mpd_tx_msg_args" );
+        
+        std::cout << "MPD-TX (3) send DATA_READY \n";
         send( sock, CMD_DATA_READY, sizeof(CMD_DATA_READY), 0 );
-	    read_size = recv( sock, server_reply, MSG_SZ, 0 );
+
+        std::cout << "MPD-TX (4) Wait for COMPLETE \n";
+        read_size = recv( sock, server_reply, MSG_SZ, 0 );
+        
+        std::cout << "MPD-TX: reply: " << server_reply << ", read_size = " << read_size << std::endl;
         if( read_size == 0 )
             break;
 
-        puts( "server reply: " );
-        puts( server_reply );
-
         if( strcmp(server_reply, CMD_COMPLETE) ) {
-            std::cout << "MPD: unexpected server reply: " << server_reply << std::endl;
+            std::cout << "MPD-TX: unexpected server reply: " << server_reply << std::endl;
             break;
         }
-        std::cout << "MPD-dbg-10\n";
     }
-    std::cout << "MPD exit.\n";
+    std::cout << "MPD-TX exit.\n";
 }
 
-void *msd_rx(void *handle_ptr)
+void *mpd_rx(void *handle_ptr)
 {
     int xferCount = 0;
     int ret;
     struct s_handle *s_handle_ptr = (struct s_handle *)handle_ptr;
     xclDeviceHandle handle = s_handle_ptr->uDevHandle;
     size_t prev_sz = INIT_BUF_SZ;
-    struct drm_xocl_sw_mailbox args = { 0, 0, true, prev_sz, 0 };
+    struct drm_xocl_sw_mailbox args = { 0, 0, false, prev_sz, 0 };
     args.data = (uint32_t *)malloc(prev_sz);
 
-    int sock, client_sock, read_size;
-    char client_message[MSG_SZ];
-    socket_server_init( sock, client_sock, 8888 );
+    int sock, read_size;
+    socket_client_init( sock, PORT_MSD_TO_MPD );
+    char message[MSG_SZ], server_reply[MSG_SZ];
 
-    //Receive a message from client
-    while( (read_size = recv(client_sock , client_message , MSG_SZ, 0)) > 0 ) {
-        printf("                recv: %s\n", client_message);
-        send( client_sock, CMD_RESPONSE, sizeof(CMD_RESPONSE), 0 );
-        break;
-    }
-
-    if(read_size == 0) {
-        puts("                  Client disconnected");
-        fflush(stdout);
-    } else if(read_size == -1) {
-        perror("                recv failed");
-    }
+    //~ /* Some sort of handshake is here */
+    //~ //Receive a message from client
+    //~ while( (read_size = recv(sock, server_reply, MSG_SZ, 0)) > 0 ) {
+        //~ printf("                recv: %s\n", server_reply);
+        //~ send( sock, CMD_RESPONSE, sizeof(CMD_RESPONSE), 0 );
+        //~ break;
+    //~ }
 
     for( ;; ) {
-        // Receive a message from MPD client
-        read_size = recv( client_sock, client_message, MSG_SZ, 0 ); // blocking
-	if( strcmp(client_message, CMD_DATA_READY) ) {
-		std::cout << "MSD: unexpected client reply: " << client_message << std::endl;
-		break;
-	}
+        std::cout << "MPD-RX (1) Wait for DATA_READY \n";
+        read_size = recv( sock, server_reply, MSG_SZ, 0 ); // blocking
+        std::cout << "MPD-RX: reply: " << server_reply << ", read_size = " << read_size << std::endl;
+        if( read_size == 0 )
+            break;
 
-        args.is_tx = false;
-        ret = xclMSD(handle, &args);
+        if( strcmp(server_reply, CMD_DATA_READY) ) {
+            std::cout << "MPD-RX: unexpected reply: " << server_reply << std::endl;
+            break;
+        }
+        
+        std::cout << "MPD-RX (2) get args and payload from file, they have been scp to by MSD \n";
+        read_args( &args, "/tmp/mpd_rx_msg_args" );
+        read_data( args.data, args.sz, "/tmp/mpd_rx_msg_bin" ); // when do we call resize_buffer()? 
+
+        std::cout << "MPD-RX (3) resize_buffer \n";
+        resize_buffer( args.data, args.sz );
+
+        std::cout << "MPD-RX (4) xclMPD \n";
+        ret = xclMPD(handle, &args);
         if( ret != 0 ) {
-            std::cout << "MSD: transfer error: " << strerror(errno) << std::endl;
+            std::cout << "MPD-RX: transfer error: " << strerror(errno) << std::endl;
             exit(1);
         }
-        std::cout << "[MSD-RX]: " << xferCount << std::endl;
-        send( client_sock, CMD_COMPLETE, sizeof(CMD_COMPLETE), 0 );
+        std::cout << "[MPD-RX]: " << xferCount << std::endl;
+        
+        std::cout << "MPD-RX (5) send COMPLETE \n";
+        send( sock, CMD_COMPLETE, sizeof(CMD_COMPLETE), 0 );
         xferCount++;
     }
-    std::cout << "MSD exit.\n";
+    std::cout << "MPD-RX exit.\n";
 }
-
 
 int init( unsigned idx )
 {
@@ -211,8 +186,7 @@ int init( unsigned idx )
         return -EBUSY;
     }
 
-    pthread_create(&msd_rx_id, NULL, msd_rx, &devHandle);
-    usleep( 50000 ); // 50 ms sleep for socket to bind
+    pthread_create(&mpd_rx_id, NULL, mpd_rx, &devHandle);
     pthread_create(&mpd_tx_id, NULL, mpd_tx, &devHandle);
 }
 
@@ -298,12 +272,10 @@ int main(int argc, char *argv[])
 //    close(STDERR_FILENO);
  
     // Daemon-specific intialization should go here
-    const int SLEEP_INTERVAL = 5;
-
     init(index);
   
     // Enter daemon loop
-    pthread_join(msd_rx_id, NULL);
+    pthread_join(mpd_rx_id, NULL);
     pthread_join(mpd_tx_id, NULL);
 
     // Close system logs for the child process
