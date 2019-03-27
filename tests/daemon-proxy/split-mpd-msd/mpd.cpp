@@ -50,19 +50,6 @@ void *mpd_tx(void *handle_ptr)
     int sock, read_size;
     socket_client_init( sock, PORT_MPD_TO_MSD );
     char message[MSG_SZ], server_reply[MSG_SZ];
-    
-    //~ while(1) { /* some handshake or synchronization can go here */
-        //~ printf("press any key: ");
-        //~ scanf("%s" , message);
-        //~ send( sock, CMD_TEST, sizeof(CMD_TEST), 0 );
-        //~ int read_size = recv( sock, server_reply, MSG_SZ, 0 );
-        //~ if( read_size == 0 )
-            //~ break;
-
-        //~ puts("Server reply :");
-        //~ puts(server_reply);
-        //~ break;
-    //~ }
 
     std::cout << "[XOCL->XCLMGMT Intercept ON (HAL)]\n";
     for( ;; ) {
@@ -88,26 +75,14 @@ void *mpd_tx(void *handle_ptr)
                 exit(1);
             }
         }
-        std::cout << "[MPD-TX]\n";
         
         std::cout << "MPD-TX (2) write payload and args to file \n";
-        write_data( &args, "/tmp/mpd_tx_msg_bin" );
-        write_args( &args, "/tmp/mpd_tx_msg_args" );
-        
-        std::cout << "MPD-TX (3) send DATA_READY \n";
-        send( sock, CMD_DATA_READY, sizeof(CMD_DATA_READY), 0 );
+        send_args( sock, &args );
+        send_data( sock, args.data, args.sz );
 
-        std::cout << "MPD-TX (4) Wait for COMPLETE \n";
-        read_size = recv( sock, server_reply, MSG_SZ, 0 );
-        
-        std::cout << "MPD-TX: reply: " << server_reply << ", read_size = " << read_size << std::endl;
-        if( read_size == 0 )
-            break;
+        std::cout << "[MPD-TX]: " << xferCount << std::endl;
+        xferCount++;
 
-        if( strcmp(server_reply, CMD_COMPLETE) ) {
-            std::cout << "MPD-TX: unexpected server reply: " << server_reply << std::endl;
-            break;
-        }
     }
     std::cout << "MPD-TX exit.\n";
 }
@@ -121,37 +96,32 @@ void *mpd_rx(void *handle_ptr)
     size_t prev_sz = INIT_BUF_SZ;
     struct drm_xocl_sw_mailbox args = { 0, 0, false, prev_sz, 0 };
     args.data = (uint32_t *)malloc(prev_sz);
+    uint32_t *pdata = args.data;
 
     int sock, read_size;
     socket_client_init( sock, PORT_MSD_TO_MPD );
     char message[MSG_SZ], server_reply[MSG_SZ];
 
-    //~ /* Some sort of handshake is here */
-    //~ //Receive a message from client
-    //~ while( (read_size = recv(sock, server_reply, MSG_SZ, 0)) > 0 ) {
-        //~ printf("                recv: %s\n", server_reply);
-        //~ send( sock, CMD_RESPONSE, sizeof(CMD_RESPONSE), 0 );
-        //~ break;
-    //~ }
-
     for( ;; ) {
-        std::cout << "MPD-RX (1) Wait for DATA_READY \n";
-        read_size = recv( sock, server_reply, MSG_SZ, 0 ); // blocking
-        std::cout << "MPD-RX: reply: " << server_reply << ", read_size = " << read_size << std::endl;
-        if( read_size == 0 )
-            break;
-
-        if( strcmp(server_reply, CMD_DATA_READY) ) {
-            std::cout << "MPD-RX: unexpected reply: " << server_reply << std::endl;
-            break;
-        }
+        std::cout << "MPD-RX (1) recv_args\n";
+        recv_args( sock, server_reply, &args );
+        args.data = pdata; // must do this after recv_args
+        args.is_tx = false;
         
-        std::cout << "MPD-RX (2) get args and payload from file, they have been scp to by MSD \n";
-        read_args( &args, "/tmp/mpd_rx_msg_args" );
-        read_data( args.data, args.sz, "/tmp/mpd_rx_msg_bin" ); // when do we call resize_buffer()? 
+        std::cout << "MPD-RX (2) resize buffer\n";
+        if( args.sz > prev_sz ) {
+            std::cout << "args.sz(" << args.sz << ") > prev_sz(" << prev_sz << ") \n";
+            resize_buffer( args.data, args.sz );
+            prev_sz = args.sz;
+        } else {
+            std::cout << "don't need to resize buffer\n";
+        }
 
-        std::cout << "MPD-RX (3) resize_buffer \n";
-        resize_buffer( args.data, args.sz );
+        std::cout << "MPD-RX (3) recv_data \n";
+        if( recv_data( sock, args.data, args.sz ) != 0 ) {
+            std::cout << "bad retval from recv_data(), exiting.\n";
+            exit(1);
+        }
 
         std::cout << "MPD-RX (4) xclMPD \n";
         ret = xclMPD(handle, &args);
@@ -160,9 +130,7 @@ void *mpd_rx(void *handle_ptr)
             exit(1);
         }
         std::cout << "[MPD-RX]: " << xferCount << std::endl;
-        
-        std::cout << "MPD-RX (5) send COMPLETE \n";
-        send( sock, CMD_COMPLETE, sizeof(CMD_COMPLETE), 0 );
+
         xferCount++;
     }
     std::cout << "MPD-RX exit.\n";

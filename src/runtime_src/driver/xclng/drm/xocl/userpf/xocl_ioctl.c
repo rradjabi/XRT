@@ -403,15 +403,18 @@ int xocl_reclock_ioctl(struct drm_device *dev, void *data,
 int xocl_sw_mailbox_ioctl(struct drm_device *dev, void *data,
 	struct drm_file *filp)
 {
-	int ret = 0;
+    int ret = 0;
 	struct xocl_drm *drm_p = dev->dev_private;
 	struct xocl_dev *xdev = drm_p->xdev;
 
 	struct drm_xocl_sw_mailbox *args;
 	args = (struct drm_xocl_sw_mailbox *)data;
+    printk(KERN_INFO "%s: is_tx: %d\n", __func__, args->is_tx);
 
 	/* 0 is a successful transfer */
+    printk(KERN_INFO "%s: before sw_transfer()\n", __func__);
 	ret = xocl_mailbox_sw_transfer(xdev, args);
-	return ret;
+    printk(KERN_INFO "%s: after sw_transfer(): %d\n", __func__, ret);
+    return ret;
 }
 

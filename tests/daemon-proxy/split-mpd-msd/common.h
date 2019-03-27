@@ -37,17 +37,62 @@ int resize_buffer( uint32_t *&buf, const size_t new_sz )
     }
     buf = (uint32_t *)malloc( new_sz );
     if( buf == NULL ) {
-        std::cout << "alloc failed \n";
         return -1;
     }
 
     return 0;
 }
 
-int write_data( struct drm_xocl_sw_mailbox *s, std::string file )
+int send_args( int sock, struct drm_xocl_sw_mailbox *args )
+{
+    send( sock, (const void*)(args), sizeof(struct drm_xocl_sw_mailbox), 0 );
+    return 0;
+}
+
+int send_data( int sock, uint32_t *buf, int buflen )
+{
+    void *vbuf = reinterpret_cast<void*>(buf);
+    unsigned char *pbuf = (unsigned char *)vbuf;
+
+    while( buflen > 0 ) {
+        int num = send( sock, pbuf, buflen, 0 );
+        pbuf += num;
+        buflen -= num;
+    }
+
+    return 0;
+}
+
+int recv_args( int sock, char* msg_buf, struct drm_xocl_sw_mailbox *args )
+{
+    recv( sock, msg_buf, sizeof(struct drm_xocl_sw_mailbox), 0 );
+    memcpy( (void *)args, (void *)msg_buf, sizeof(struct drm_xocl_sw_mailbox) );
+    std::cout  << "args->sz: " << args->sz << std::endl;
+    return 0;
+}
+
+int recv_data( int sock, uint32_t *pdata, int buflen )
+{
+    unsigned char *pbuf = reinterpret_cast<unsigned char*>(pdata);
+    while( buflen > 0 ) {
+        int num = recv( sock, pbuf, buflen, 0 );
+        if( num < 0 ) {
+            std::cout << "Error, failed to recv: " << num << ", errno: " << errno << " errstr: " << strerror(errno) << std::endl;
+            return num;
+        }
+        pbuf += num;
+        buflen -= num;
+        std::cout << "buflen=" << buflen << ", num=" << num << std::endl;
+    }
+    std::cout << "transfer complete: buflen=" << buflen << std::endl;
+    return 0;
+}
+
+
+int write_data( uint32_t *d, size_t sz, std::string file )
 {
     std::ofstream msg_bin( file.c_str(), std::ofstream::binary );
-    msg_bin.write( reinterpret_cast<char*>(&s->data), s->sz );
+    msg_bin.write( reinterpret_cast<char*>(&d), sz );
     msg_bin.close();
     return 0;
 }
@@ -62,20 +107,18 @@ int write_args( struct drm_xocl_sw_mailbox *s, std::string file )
 
 int read_data( uint32_t *d, const size_t sz, std::string file )
 {
-    std::cout << "read_data 1, &d= " << &d << ", sz= " << sz << "\n";
+    std::cout << "read_data 1, d= " << d << ", sz= " << sz << "\n";
     std::ifstream in( file.c_str(), std::ifstream::binary );
     in.seekg( 0, in.end );
     int length = in.tellg();
+    std::cout << "read_data: length: " << length << std::endl;
     if( length > sz ) {
-        std::cout << "Error: trying to read more than we have size \
-                        length= " << length << ", sz= " << sz << std::endl;
-        in.close();
-        return -1;
+        std::cout << "file length > alloc'd buffer size, calling resize_buffer()\n";
+        resize_buffer( d, length );
     }
-    char *ptr = reinterpret_cast<char*>(d);
     in.seekg( 0, in.beg );
     std::cout << "read_data 2\n";
-    in.read( ptr, length );
+    in.read( reinterpret_cast<char*>(d), length );
     std::cout << "read_data 3\n";
     in.close();
     std::cout << "read_data 4\n";

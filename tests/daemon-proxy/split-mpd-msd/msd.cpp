@@ -38,32 +38,6 @@ pthread_t msd_tx_id;
 pthread_t msd_rx_id;
 const std::string PemFile = "/home/rradjabi/keys/localhost/localhost.pem";
 
-int do_scp_from( std::string src, std::string dest, std::string remote )
-{
-    std::string exec = "scp -i " + PemFile + " rradjabi@" + remote + ":" + src + " " + dest;
-
-    if(system(exec.c_str())==0) {
-        std::cout << "Pass\n";
-        return 0;
-    } else {
-        std::cout << "Fail\n";
-        return -1;
-    }
-}
-
-int do_scp_to( std::string src, std::string dest, std::string remote )
-{
-    std::string exec = "scp -i " + PemFile + " " + src + " rradjabi@" + remote + ":" + dest;
-
-    if(system(exec.c_str())==0) {
-        std::cout << "Pass\n";
-        return 0;
-    } else {
-        std::cout << "Fail\n";
-        return -1;
-    }
-}
-
 void *msd_tx(void *handle_ptr)
 {
     int xferCount = 0;
@@ -78,20 +52,12 @@ void *msd_tx(void *handle_ptr)
     char client_message[MSG_SZ];
     socket_server_init( sock, client_sock, PORT_MSD_TO_MPD );
 
-    //~ /* some handshake */
-    //~ while( (read_size = recv(client_sock , client_message , MSG_SZ, 0)) > 0 ) {
-        //~ printf("                recv: %s\n", client_message);
-        //~ send( client_sock, CMD_RESPONSE, sizeof(CMD_RESPONSE), 0 );
-        //~ break;
-    //~ }
-
     std::cout << "               [XCLMGMT->XOCL Intercept ON (HAL)]\n";
     for( ;; ) {
         std::cout << "MSD-TX (1) MSD TX IOCTL \n";
         args.sz = prev_sz;
         ret = xclMSD(handle, &args);
         if( ret != 0 ) {
-            // sw channel xfer error 
             if( errno != EMSGSIZE ) {
                 std::cout << "              MSD: transfer failed for other reason\n";
                 exit(1);
@@ -110,30 +76,12 @@ void *msd_tx(void *handle_ptr)
                 exit(1);
             }
         }
-        std::cout << "                [MSD-TX]\n";
         
         std::cout << "MSD-TX (2) args and data to file \n";
-        write_args( &args, "/tmp/msd_tx_msg_args" );
-        write_data( &args, "/tmp/msd_tx_msg_data" );
-
-        std::cout << "MSD-TX (3) scp args and data to MPD \n";
-        do_scp_to( "/tmp/msd_tx_msg_args", "/tmp/mpd_rx_msg_args", "localhost" );
-        do_scp_to( "/tmp/msd_tx_msg_bin", "/tmp/mpd_rx_msg_bin", "localhost" );
-        
-        std::cout << "MSD-TX (4) send DATA_READY \n";
-        send( client_sock, CMD_DATA_READY, sizeof(CMD_DATA_READY), 0 );
-        
-        std::cout << "MSD-TX (5) wait for COMPLETE\n";
-        /* (5) wait for COMPLETE */
-        read_size = recv( client_sock, client_message, MSG_SZ, 0 );
-        std::cout << "              MSD-TX: reply: " << client_message << ", read_size = " << read_size << std::endl;
-        if( read_size == 0 )
-            break;
-
-        if( strcmp(client_message, CMD_COMPLETE) ) {
-            std::cout << "             MSD-TX: unexpected server reply: " << client_message << std::endl;
-            break;
-        }
+        send_args( client_sock, &args );
+        send_data( client_sock, args.data, args.sz );
+        std::cout << "                [MSD-TX]: " << xferCount << std::endl;
+        xferCount++;
     }
 
     std::cout << "          MSD-TX exit.\n";
@@ -148,44 +96,34 @@ void *msd_rx(void *handle_ptr)
     size_t prev_sz = INIT_BUF_SZ;
     struct drm_xocl_sw_mailbox args = { 0, 0, false, prev_sz, 0 };
     args.data = (uint32_t *)malloc(prev_sz);
+    uint32_t *pdata = args.data;
 
     int sock, client_sock, read_size;
     char client_message[MSG_SZ];
     socket_server_init( sock, client_sock, PORT_MPD_TO_MSD );
 
-    //~ /* handshake */
-    //~ while( (read_size = recv(client_sock , client_message , MSG_SZ, 0)) > 0 ) {
-        //~ printf("                recv: %s\n", client_message);
-        //~ send( client_sock, CMD_RESPONSE, sizeof(CMD_RESPONSE), 0 );
-        //~ break;
-    //~ }
-
     for( ;; ) {
-        std::cout << "MSD-RX (1) wait for DATA_READY\n";
-        read_size = recv( client_sock, client_message, MSG_SZ, 0 );
-        std::cout << "              MSD-RX: reply: " << client_message << ", read_size = " << read_size << std::endl;
-        if( read_size == 0 )
-            break;
-
-        if( strcmp(client_message, CMD_DATA_READY) ) {
-            std::cout << "          MSD-RX: unexpected message: " << client_message << std::endl;
-            break;
+        std::cout << "MSD-RX (1) recv_args\n";        
+        recv_args( client_sock, client_message, &args );
+        args.data = pdata; // must do this after recv_args
+        args.is_tx = false; // must do this
+        
+        std::cout << "MSD-RX (2) resize buffer\n";
+        if( args.sz > prev_sz ) {
+            std::cout << "args.sz(" << args.sz << ") > prev_sz(" << prev_sz << ") \n";
+            resize_buffer( args.data, args.sz );
+            prev_sz = args.sz;
+        } else {
+            std::cout << "don't need to resize buffer\n";
         }
 
-        std::cout << "MSD-RX (2) scp args and data from MPD \n";
-        do_scp_from( "/tmp/mpd_tx_msg_args", "/tmp/msd_rx_msg_args", "localhost" );
-        do_scp_from( "/tmp/mpd_tx_msg_bin", "/tmp/msd_rx_msg_bin", "localhost" );
-        
-        std::cout << "MSD-RX (3) read args from file \n";
-        read_args( &args, "/tmp/msd_rx_msg_args" );
-        
-        std::cout << "MSD-RX (4) resize buffer\n";
-        resize_buffer( args.data, args.sz );
-        
-        std::cout << "MSD-RX (5) read data from file \n";
-        read_data( args.data, args.sz, "/tmp/msd_rx_msg_bin" );
-        
-        std::cout << "MSD-RX (6) xclMSD \n";
+        std::cout << "MSD-RX (3) recv_data\n";        
+        if( recv_data( client_sock, args.data, args.sz ) != 0 ) {
+            std::cout << "bad retval from recv_data(), exiting.\n";
+            exit(1);
+        }
+                
+        std::cout << "MSD-RX (4) xclMSD \n";
         ret = xclMPD(handle, &args);
         if( ret != 0 ) {
             std::cout << "          MSD-RX: transfer error: " << strerror(errno) << std::endl;
@@ -193,8 +131,6 @@ void *msd_rx(void *handle_ptr)
         }
         std::cout << "          [MSD-RX]: " << xferCount << std::endl;
         
-        std::cout << "MSD-RX (7) send COMPLETE \n";
-        send( client_sock, CMD_COMPLETE, sizeof(CMD_COMPLETE), 0 );
         xferCount++;
     }
     std::cout << "          MSD-RX exit.\n";

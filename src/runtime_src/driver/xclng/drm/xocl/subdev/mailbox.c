@@ -1716,6 +1716,7 @@ static int mailbox_sw_transfer(struct platform_device *pdev, void *args)
 
 	sw_chan_args = (struct sw_chan *)args;
 
+MBX_ERR(mbx, "RFR: is_tx: %d", sw_chan_args->is_tx);
 	if (sw_chan_args->is_tx)
 		ch = &mbx->mbx_tx;
 	else
@@ -1748,6 +1749,7 @@ static int mailbox_sw_transfer(struct platform_device *pdev, void *args)
 					ch->sw_chan_buf_sz);
 		sw_chan_args->id = ch->sw_chan_msg_id;
 		sw_chan_args->sz = ch->sw_chan_buf_sz;
+MBX_ERR(mbx, "RFR: copy_to_user, ret: %d", ret);
 
 		ch->sw_chan_msg_id = 0;
 		mutex_unlock(&ch->sw_chan_mutex);
@@ -1767,7 +1769,8 @@ static int mailbox_sw_transfer(struct platform_device *pdev, void *args)
 			ret = copy_from_user(ch->sw_chan_buf,
 						sw_chan_args->data,
 						sw_chan_args->sz);
-		}
+MBX_ERR(mbx, "RFR: copy_from_user, ret: %d", ret);
+        }
 		mutex_unlock(&ch->sw_chan_mutex);
 
 		if (ret != 0) {
