@@ -257,9 +257,9 @@ int main(int argc, char *argv[])
     }
  
     // A daemon cannot use the terminal, so close standard file descriptors for security reasons
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);
+//    close(STDIN_FILENO);
+//    close(STDOUT_FILENO);
+//    close(STDERR_FILENO);
  
     // Daemon-specific intialization should go here
     const int SLEEP_INTERVAL = 5;
