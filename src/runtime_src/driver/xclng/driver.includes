@@ -1,0 +1,6 @@
+drm/xocl
+drm/xocl/lib
+drm/xocl/lib/libqdma
+drm/xocl/mgmtpf
+drm/xocl/userpf
+include

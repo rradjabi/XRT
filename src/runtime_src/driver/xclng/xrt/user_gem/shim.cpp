@@ -2273,6 +2273,6 @@ int xclMPD(xclDeviceHandle handle, struct drm_xocl_sw_mailbox *args)
 
 int xclMSD(xclDeviceHandle handle, struct drm_xocl_sw_mailbox *args)
 {
-    xocl::XOCLShim *drv = xocl::XOCLShim::handleCheck(handle);
+    xocl::XOCLShim *drv = xocl::XOCLShim::handleCheckMgmt(handle);
     return drv ? drv->xclMSD(args) : -ENODEV;
 }

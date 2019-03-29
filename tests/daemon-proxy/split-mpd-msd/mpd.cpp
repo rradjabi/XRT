@@ -53,17 +53,17 @@ void *mpd_tx(void *handle_ptr)
 
     std::cout << "[XOCL->XCLMGMT Intercept ON (HAL)]\n";
     for( ;; ) {
-        std::cout << "MPD-TX (1) MPD TX IOCTL \n";
+        std::cout << "[MPD-TX]:" << xferCount << ".1 MPD TX IOCTL \n";
         args.sz = prev_sz;
         ret = xclMPD(handle, &args);
         if( ret != 0 ) {
             if( errno != EMSGSIZE ) {
-                std::cout << "MPD: transfer failed for other reason\n";
+                std::cout << "[MPD-TX]: transfer failed for other reason\n";
                 exit(1);
             }
 
             if( resize_buffer( args.data, args.sz ) != 0 ) {
-                std::cout << "MPD: resize_buffer() failed...exiting\n";
+                std::cout << "[MPD-TX]: resize_buffer() failed...exiting\n";
                 exit(1);
             }
 
@@ -71,20 +71,21 @@ void *mpd_tx(void *handle_ptr)
             ret = xclMPD(handle, &args);
 
             if( ret != 0 ) {
-                std::cout << "MPD: second transfer failed, exiting.\n";
+                std::cout << "[MPD-TX]: second transfer failed, exiting.\n";
                 exit(1);
             }
         }
         
-        std::cout << "MPD-TX (2) write payload and args to file \n";
+        std::cout << "[MPD-TX]:" << xferCount << ".2 send args over socket\n";
         send_args( sock, &args );
+        std::cout << "[MPD-TX]:" << xferCount << ".3 send payload over socket\n";
         send_data( sock, args.data, args.sz );
 
-        std::cout << "[MPD-TX]: " << xferCount << std::endl;
+        std::cout << "[MPD-TX]:" << xferCount << " complete.\n";
         xferCount++;
 
     }
-    std::cout << "MPD-TX exit.\n";
+    std::cout << "[MPD-TX] exit.\n";
 }
 
 void *mpd_rx(void *handle_ptr)
@@ -103,12 +104,14 @@ void *mpd_rx(void *handle_ptr)
     char message[MSG_SZ], server_reply[MSG_SZ];
 
     for( ;; ) {
-        std::cout << "MPD-RX (1) recv_args\n";
+        std::cout << "[MPD-RX]:" << xferCount << ".1 recv_args\n";
         recv_args( sock, server_reply, &args );
+        
         args.data = pdata; // must do this after recv_args
         args.is_tx = false;
+
         
-        std::cout << "MPD-RX (2) resize buffer\n";
+        std::cout << "[MPD-RX]:" << xferCount << ".2 resize buffer\n";
         if( args.sz > prev_sz ) {
             std::cout << "args.sz(" << args.sz << ") > prev_sz(" << prev_sz << ") \n";
             resize_buffer( args.data, args.sz );
@@ -117,23 +120,23 @@ void *mpd_rx(void *handle_ptr)
             std::cout << "don't need to resize buffer\n";
         }
 
-        std::cout << "MPD-RX (3) recv_data \n";
+        std::cout << "[MPD-RX]:" << xferCount << ".3 recv_data \n";
         if( recv_data( sock, args.data, args.sz ) != 0 ) {
             std::cout << "bad retval from recv_data(), exiting.\n";
             exit(1);
         }
 
-        std::cout << "MPD-RX (4) xclMPD \n";
+        std::cout << "[MPD-RX]:" << xferCount << ".4 xclMPD \n";
         ret = xclMPD(handle, &args);
         if( ret != 0 ) {
-            std::cout << "MPD-RX: transfer error: " << strerror(errno) << std::endl;
+            std::cout << "[MPD-RX]: transfer error: " << strerror(errno) << std::endl;
             exit(1);
         }
-        std::cout << "[MPD-RX]: " << xferCount << std::endl;
+        std::cout << "[MPD-RX]:" << xferCount << " complete.\n";
 
         xferCount++;
     }
-    std::cout << "MPD-RX exit.\n";
+    std::cout << "[MPD-RX] exit.\n";
 }
 
 int init( unsigned idx )

@@ -36,7 +36,6 @@
 xclDeviceHandle uHandle;
 pthread_t msd_tx_id;
 pthread_t msd_rx_id;
-const std::string PemFile = "/home/rradjabi/keys/localhost/localhost.pem";
 
 void *msd_tx(void *handle_ptr)
 {
@@ -52,20 +51,20 @@ void *msd_tx(void *handle_ptr)
     char client_message[MSG_SZ];
     socket_server_init( sock, client_sock, PORT_MSD_TO_MPD );
 
-    std::cout << "               [XCLMGMT->XOCL Intercept ON (HAL)]\n";
+    std::cout << "              [XCLMGMT->XOCL Intercept ON (HAL)]\n";
     for( ;; ) {
-        std::cout << "			[MSD-TX]:" << xferCount << " (1) MSD TX IOCTL \n";
+        std::cout << "              [MSD-TX]:" << xferCount << ".1 MSD TX IOCTL \n";
         args.sz = prev_sz;
         ret = xclMSD(handle, &args);
-        std::cout << "			[MSD-TX]:" << xferCount << " (1.1) return from xclMSD\n";
         if( ret != 0 ) {
             if( errno != EMSGSIZE ) {
-                std::cout << "              MSD: transfer failed for other reason\n";
+                std::cout << "              [MSD-TX]: transfer failed for other reason: errno:" << errno
+                          << ", str: " << strerror(errno) << std::endl;
                 exit(1);
             }
             
             if( resize_buffer( args.data, args.sz ) != 0 ) {
-                std::cout << "              MSD: resize_buffer() failed...exiting\n";
+                std::cout << "              [MSD-TX]: resize_buffer() failed...exiting\n";
                 exit(1);
             }
 
@@ -73,20 +72,19 @@ void *msd_tx(void *handle_ptr)
             ret = xclMSD(handle, &args);
 
             if( ret != 0 ) {
-                std::cout << "              MSD: second transfer failed, exiting.\n";
+                std::cout << "              [MSD-TX]: second transfer failed, exiting.\n";
                 exit(1);
             }
         }
         
-        std::cout << "			[MSD-TX]:" << xferCount << " (2) send args over socket \n";
+        std::cout << "              [MSD-TX]:" << xferCount << ".2 send args over socket \n";
         send_args( client_sock, &args );
-        std::cout << "			[MSD-TX]:" << xferCount << " (3) send data over socket \n";
+        std::cout << "              [MSD-TX]:" << xferCount << ".3 send data over socket \n";
         send_data( client_sock, args.data, args.sz );
-        std::cout << "                [MSD-TX]: " << xferCount << " complete.\n";
+        std::cout << "              [MSD-TX]:" << xferCount << " complete.\n";
         xferCount++;
     }
-
-    std::cout << "          MSD-TX exit.\n";
+    std::cout << "              [MSD-TX]: exit.\n";
 }
 
 void *msd_rx(void *handle_ptr)
@@ -105,12 +103,15 @@ void *msd_rx(void *handle_ptr)
     socket_server_init( sock, client_sock, PORT_MPD_TO_MSD );
 
     for( ;; ) {
-        std::cout << "			[MSD-RX]:" << xferCount << " (1) recv_args\n";        
+        std::cout << "              [MSD-RX]:" << xferCount << ".1 recv_args\n";        
         recv_args( client_sock, client_message, &args );
+        
         args.data = pdata; // must do this after recv_args
         args.is_tx = false; // must do this
+
+        std::cout << "args.sz:" << args.sz << ", prev_sz:" << prev_sz << "\n";
         
-        std::cout << "			[MSD-RX]:" << xferCount << " (2) resize buffer\n";
+        std::cout << "              [MSD-RX]:" << xferCount << ".2 resize buffer\n";
         if( args.sz > prev_sz ) {
             std::cout << "args.sz(" << args.sz << ") > prev_sz(" << prev_sz << ") \n";
             resize_buffer( args.data, args.sz );
@@ -119,43 +120,53 @@ void *msd_rx(void *handle_ptr)
             std::cout << "don't need to resize buffer\n";
         }
 
-        std::cout << "			[MSD-RX]:" << xferCount << " (3) recv_data\n";        
+        std::cout << "              [MSD-RX]:" << xferCount << ".3 recv_data\n";        
         if( recv_data( client_sock, args.data, args.sz ) != 0 ) {
             std::cout << "bad retval from recv_data(), exiting.\n";
             exit(1);
         }
                 
-        std::cout << "			[MSD-RX]:" << xferCount << " (4) xclMSD \n";
-        ret = xclMPD(handle, &args);
+        std::cout << "              [MSD-RX]:" << xferCount << ".4 xclMSD \n";
+        ret = xclMSD(handle, &args);
         if( ret != 0 ) {
-            std::cout << "          MSD-RX: transfer error: " << strerror(errno) << std::endl;
+            std::cout << "          [MSD-RX]:" << xferCount << " transfer error: " << strerror(errno) << std::endl;
             exit(1);
         }
-        std::cout << "          [MSD-RX]: " << xferCount << " complete.\n";
+        std::cout << "              [MSD-RX]:" << xferCount << " complete.\n";
         
         xferCount++;
     }
-    std::cout << "          MSD-RX exit.\n";
+    std::cout << "              [MSD-RX]:" << xferCount << " exit.\n";
 }
 
 int init( unsigned idx )
 {
     xclDeviceInfo2 deviceInfo;
+    xclErrorStatus m_errinfo;
     unsigned deviceIndex = idx;
 
-    if( deviceIndex >= xclProbe() ) {
-        throw std::runtime_error("Cannot find specified device index");
-        return -ENODEV;
-    }
+    //~ if( deviceIndex >= xclProbe() ) {
+        //~ throw std::runtime_error("Cannot find specified device index");
+        //~ return -ENODEV;
+    //~ }
 
-    uHandle = xclOpen(deviceIndex, NULL, XCL_INFO);
+    uHandle = xclOpenMgmt(deviceIndex, NULL, XCL_INFO);
+    if( !uHandle )
+        throw std::runtime_error("Failed to open mgmt device.");
+        
     struct s_handle devHandle = { uHandle };
 
     if( xclGetDeviceInfo2(uHandle, &deviceInfo) ) {
         throw std::runtime_error("Unable to obtain device information");
         return -EBUSY;
+    } else {
+        std::cout << "xclGetDeviceInfo2 pass\n";
     }
-
+    if (xclGetErrorStatus(uHandle, &m_errinfo))
+        throw std::runtime_error("Unable to obtain AXI error from device.");
+    else
+        std::cout << "xclGetErrorStatus pass\n";
+        
     pthread_create(&msd_tx_id, NULL, msd_tx, &devHandle);
     pthread_create(&msd_rx_id, NULL, msd_rx, &devHandle);
 }
@@ -187,54 +198,54 @@ int main(int argc, char *argv[])
         }
     }
  
-    //~ // Define variables
-    //~ pid_t pid, sid;
+    // Define variables
+    pid_t pid, sid;
  
-    //~ // Fork the current process
-    //~ pid = fork();
-    //~ // The parent process continues with a process ID greater than 0
-    //~ if(pid > 0)
-    //~ {
-        //~ exit(EXIT_SUCCESS);
-    //~ }
-    //~ // A process ID lower than 0 indicates a failure in either process
-    //~ else if(pid < 0)
-    //~ {
-        //~ exit(EXIT_FAILURE);
-    //~ }
-    //~ // The parent process has now terminated, and the forked child process will continue
-    //~ // (the pid of the child process was 0)
+    // Fork the current process
+    pid = fork();
+    // The parent process continues with a process ID greater than 0
+    if(pid > 0)
+    {
+        exit(EXIT_SUCCESS);
+    }
+    // A process ID lower than 0 indicates a failure in either process
+    else if(pid < 0)
+    {
+        exit(EXIT_FAILURE);
+    }
+    // The parent process has now terminated, and the forked child process will continue
+    // (the pid of the child process was 0)
  
-    //~ // Since the child process is a daemon, the umask needs to be set so files and logs can be written
-    //~ umask(0);
+    // Since the child process is a daemon, the umask needs to be set so files and logs can be written
+    umask(0);
  
-    //~ // Open system logs for the child process
-    //~ openlog("daemon-named", LOG_NOWAIT | LOG_PID, LOG_USER);
-    //~ syslog(LOG_NOTICE, "Successfully started daemon-name");
+    // Open system logs for the child process
+    openlog("daemon-named", LOG_NOWAIT | LOG_PID, LOG_USER);
+    syslog(LOG_NOTICE, "Successfully started daemon-name");
  
-    //~ // Generate a session ID for the child process
-    //~ sid = setsid();
-    //~ // Ensure a valid SID for the child process
-    //~ if(sid < 0)
-    //~ {
-        //~ // Log failure and exit
-        //~ syslog(LOG_ERR, "Could not generate session ID for child process");
+    // Generate a session ID for the child process
+    sid = setsid();
+    // Ensure a valid SID for the child process
+    if(sid < 0)
+    {
+        // Log failure and exit
+        syslog(LOG_ERR, "Could not generate session ID for child process");
  
-        //~ // If a new session ID could not be generated, we must terminate the child process
-        //~ // or it will be orphaned
-        //~ exit(EXIT_FAILURE);
-    //~ }
+        // If a new session ID could not be generated, we must terminate the child process
+        // or it will be orphaned
+        exit(EXIT_FAILURE);
+    }
  
-    //~ // Change the current working directory to a directory guaranteed to exist
-    //~ if((chdir("/")) < 0)
-    //~ {
-        //~ // Log failure and exit
-        //~ syslog(LOG_ERR, "Could not change working directory to /");
+    // Change the current working directory to a directory guaranteed to exist
+    if((chdir("/")) < 0)
+    {
+        // Log failure and exit
+        syslog(LOG_ERR, "Could not change working directory to /");
  
-        //~ // If our guaranteed directory does not exist, terminate the child process to ensure
-        //~ // the daemon has not been hijacked
-        //~ exit(EXIT_FAILURE);
-    //~ }
+        // If our guaranteed directory does not exist, terminate the child process to ensure
+        // the daemon has not been hijacked
+        exit(EXIT_FAILURE);
+    }
  
     // A daemon cannot use the terminal, so close standard file descriptors for security reasons
 //    close(STDIN_FILENO);
