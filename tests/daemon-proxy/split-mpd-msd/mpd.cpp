@@ -37,6 +37,8 @@ xclDeviceHandle uHandle;
 pthread_t mpd_tx_id;
 pthread_t mpd_rx_id;
 
+int g_sock_fd;
+
 void *mpd_tx(void *handle_ptr)
 {
     int xferCount = 0;
@@ -46,10 +48,6 @@ void *mpd_tx(void *handle_ptr)
     size_t prev_sz = INIT_BUF_SZ;
     struct drm_xocl_sw_mailbox args = { 0, 0, true, prev_sz, 0 };
     args.data = (uint32_t *)malloc(prev_sz);
-
-    int sock, read_size;
-    socket_client_init( sock, PORT_MPD_TO_MSD );
-    char message[MSG_SZ], server_reply[MSG_SZ];
 
     std::cout << "[XOCL->XCLMGMT Intercept ON (HAL)]\n";
     for( ;; ) {
@@ -77,14 +75,15 @@ void *mpd_tx(void *handle_ptr)
         }
         
         std::cout << "[MPD-TX]:" << xferCount << ".2 send args over socket\n";
-        send_args( sock, &args );
+        send_args( g_sock_fd, &args );
         std::cout << "[MPD-TX]:" << xferCount << ".3 send payload over socket\n";
-        send_data( sock, args.data, args.sz );
+        send_data( g_sock_fd, args.data, args.sz );
 
         std::cout << "[MPD-TX]:" << xferCount << " complete.\n";
         xferCount++;
 
     }
+    xclClose(handle);
     std::cout << "[MPD-TX] exit.\n";
 }
 
@@ -100,12 +99,12 @@ void *mpd_rx(void *handle_ptr)
     uint32_t *pdata = args.data;
 
     int sock, read_size;
-    socket_client_init( sock, PORT_MSD_TO_MPD );
-    char message[MSG_SZ], server_reply[MSG_SZ];
+    char reply[MSG_SZ];
 
     for( ;; ) {
         std::cout << "[MPD-RX]:" << xferCount << ".1 recv_args\n";
-        recv_args( sock, server_reply, &args );
+        if( recv_args( g_sock_fd, reply, &args ) <= 0 )
+            break;
         
         args.data = pdata; // must do this after recv_args
         args.is_tx = false;
@@ -121,7 +120,7 @@ void *mpd_rx(void *handle_ptr)
         }
 
         std::cout << "[MPD-RX]:" << xferCount << ".3 recv_data \n";
-        if( recv_data( sock, args.data, args.sz ) != 0 ) {
+        if( recv_data( g_sock_fd, args.data, args.sz ) != 0 ) {
             std::cout << "bad retval from recv_data(), exiting.\n";
             exit(1);
         }
@@ -136,6 +135,7 @@ void *mpd_rx(void *handle_ptr)
 
         xferCount++;
     }
+    xclClose(handle);
     std::cout << "[MPD-RX] exit.\n";
 }
 
@@ -156,6 +156,8 @@ int init( unsigned idx )
         throw std::runtime_error("Unable to obtain device information");
         return -EBUSY;
     }
+
+    mpd_comm_init( &g_sock_fd );
 
     pthread_create(&mpd_rx_id, NULL, mpd_rx, &devHandle);
     pthread_create(&mpd_tx_id, NULL, mpd_tx, &devHandle);
@@ -187,73 +189,17 @@ int main(int argc, char *argv[])
             return -1;
         }
     }
- 
-    // Define variables
-    pid_t pid, sid;
- 
-    // Fork the current process
-    pid = fork();
-    // The parent process continues with a process ID greater than 0
-    if(pid > 0)
-    {
-        exit(EXIT_SUCCESS);
-    }
-    // A process ID lower than 0 indicates a failure in either process
-    else if(pid < 0)
-    {
-        exit(EXIT_FAILURE);
-    }
-    // The parent process has now terminated, and the forked child process will continue
-    // (the pid of the child process was 0)
- 
-    // Since the child process is a daemon, the umask needs to be set so files and logs can be written
-    umask(0);
- 
-    // Open system logs for the child process
-    openlog("daemon-named", LOG_NOWAIT | LOG_PID, LOG_USER);
-    syslog(LOG_NOTICE, "Successfully started daemon-name");
- 
-    // Generate a session ID for the child process
-    sid = setsid();
-    // Ensure a valid SID for the child process
-    if(sid < 0)
-    {
-        // Log failure and exit
-        syslog(LOG_ERR, "Could not generate session ID for child process");
- 
-        // If a new session ID could not be generated, we must terminate the child process
-        // or it will be orphaned
-        exit(EXIT_FAILURE);
-    }
- 
-    // Change the current working directory to a directory guaranteed to exist
-    if((chdir("/")) < 0)
-    {
-        // Log failure and exit
-        syslog(LOG_ERR, "Could not change working directory to /");
- 
-        // If our guaranteed directory does not exist, terminate the child process to ensure
-        // the daemon has not been hijacked
-        exit(EXIT_FAILURE);
-    }
- 
-    // A daemon cannot use the terminal, so close standard file descriptors for security reasons
-//    close(STDIN_FILENO);
-//    close(STDOUT_FILENO);
-//    close(STDERR_FILENO);
- 
-    // Daemon-specific intialization should go here
+
     init(index);
   
     // Enter daemon loop
-    pthread_join(mpd_rx_id, NULL);
     pthread_join(mpd_tx_id, NULL);
 
-    // Close system logs for the child process
-    xclClose(uHandle);
-    syslog(LOG_NOTICE, "Stopping daemon-name");
-    closelog();
- 
+    // cleanup if thread returns
+    pthread_cancel(mpd_rx_id);
+    comm_fini(g_sock_fd);
+    //xclClose(uHandle);
+
     // Terminate the child process when the daemon completes
     exit(EXIT_SUCCESS);
 }

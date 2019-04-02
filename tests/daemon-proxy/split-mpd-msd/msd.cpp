@@ -33,9 +33,11 @@
 
 #define INIT_BUF_SZ 64
 
-xclDeviceHandle uHandle;
+//xclDeviceHandle uHandle;
 pthread_t msd_tx_id;
 pthread_t msd_rx_id;
+
+int g_sock_fd;
 
 void *msd_tx(void *handle_ptr)
 {
@@ -46,10 +48,6 @@ void *msd_tx(void *handle_ptr)
     size_t prev_sz = INIT_BUF_SZ;
     struct drm_xocl_sw_mailbox args = { 0, 0, true, prev_sz, 0 };
     args.data = (uint32_t *)malloc(prev_sz);
-
-    int sock, client_sock, read_size;
-    char client_message[MSG_SZ];
-    socket_server_init( sock, client_sock, PORT_MSD_TO_MPD );
 
     std::cout << "              [XCLMGMT->XOCL Intercept ON (HAL)]\n";
     for( ;; ) {
@@ -78,13 +76,14 @@ void *msd_tx(void *handle_ptr)
         }
         
         std::cout << "              [MSD-TX]:" << xferCount << ".2 send args over socket \n";
-        send_args( client_sock, &args );
+        send_args( g_sock_fd, &args );
         std::cout << "              [MSD-TX]:" << xferCount << ".3 send data over socket \n";
-        send_data( client_sock, args.data, args.sz );
+        send_data( g_sock_fd, args.data, args.sz );
         std::cout << "              [MSD-TX]:" << xferCount << " complete.\n";
         xferCount++;
     }
     std::cout << "              [MSD-TX]: exit.\n";
+    xclClose(handle);
 }
 
 void *msd_rx(void *handle_ptr)
@@ -98,13 +97,12 @@ void *msd_rx(void *handle_ptr)
     args.data = (uint32_t *)malloc(prev_sz);
     uint32_t *pdata = args.data;
 
-    int sock, client_sock, read_size;
     char client_message[MSG_SZ];
-    socket_server_init( sock, client_sock, PORT_MPD_TO_MSD );
 
     for( ;; ) {
         std::cout << "              [MSD-RX]:" << xferCount << ".1 recv_args\n";        
-        recv_args( client_sock, client_message, &args );
+        if( recv_args( g_sock_fd, client_message, &args ) <= 0 )
+            break;
         
         args.data = pdata; // must do this after recv_args
         args.is_tx = false; // must do this
@@ -121,7 +119,7 @@ void *msd_rx(void *handle_ptr)
         }
 
         std::cout << "              [MSD-RX]:" << xferCount << ".3 recv_data\n";        
-        if( recv_data( client_sock, args.data, args.sz ) != 0 ) {
+        if( recv_data( g_sock_fd, args.data, args.sz ) != 0 ) {
             std::cout << "bad retval from recv_data(), exiting.\n";
             exit(1);
         }
@@ -137,6 +135,7 @@ void *msd_rx(void *handle_ptr)
         xferCount++;
     }
     std::cout << "              [MSD-RX]:" << xferCount << " exit.\n";
+    xclClose(handle);
 }
 
 int init( unsigned idx )
@@ -145,12 +144,7 @@ int init( unsigned idx )
     xclErrorStatus m_errinfo;
     unsigned deviceIndex = idx;
 
-    //~ if( deviceIndex >= xclProbe() ) {
-        //~ throw std::runtime_error("Cannot find specified device index");
-        //~ return -ENODEV;
-    //~ }
-
-    uHandle = xclOpenMgmt(deviceIndex, NULL, XCL_INFO);
+    xclDeviceHandle uHandle = xclOpenMgmt(deviceIndex, NULL, XCL_INFO);
     if( !uHandle )
         throw std::runtime_error("Failed to open mgmt device.");
         
@@ -166,7 +160,9 @@ int init( unsigned idx )
         throw std::runtime_error("Unable to obtain AXI error from device.");
     else
         std::cout << "xclGetErrorStatus pass\n";
-        
+
+    msd_comm_init(&g_sock_fd);
+
     pthread_create(&msd_tx_id, NULL, msd_tx, &devHandle);
     pthread_create(&msd_rx_id, NULL, msd_rx, &devHandle);
 }
@@ -179,93 +175,18 @@ void printHelp( void )
 
 int main(int argc, char *argv[])
 {
-    unsigned index = 0;
-    int c;
-
-    while ((c = getopt(argc, argv, "d:h:")) != -1)
-    {
-        switch (c)
-        {
-        case 'd':
-            index = std::atoi(optarg);
-            break;
-        case 'h':
-            printHelp();
-            return 0;
-        default:
-            printHelp();
-            return -1;
-        }
-    }
- 
-    // Define variables
-    pid_t pid, sid;
- 
-    // Fork the current process
-    pid = fork();
-    // The parent process continues with a process ID greater than 0
-    if(pid > 0)
-    {
-        exit(EXIT_SUCCESS);
-    }
-    // A process ID lower than 0 indicates a failure in either process
-    else if(pid < 0)
-    {
-        exit(EXIT_FAILURE);
-    }
-    // The parent process has now terminated, and the forked child process will continue
-    // (the pid of the child process was 0)
- 
-    // Since the child process is a daemon, the umask needs to be set so files and logs can be written
-    umask(0);
- 
-    // Open system logs for the child process
-    openlog("daemon-named", LOG_NOWAIT | LOG_PID, LOG_USER);
-    syslog(LOG_NOTICE, "Successfully started daemon-name");
- 
-    // Generate a session ID for the child process
-    sid = setsid();
-    // Ensure a valid SID for the child process
-    if(sid < 0)
-    {
-        // Log failure and exit
-        syslog(LOG_ERR, "Could not generate session ID for child process");
- 
-        // If a new session ID could not be generated, we must terminate the child process
-        // or it will be orphaned
-        exit(EXIT_FAILURE);
-    }
- 
-    // Change the current working directory to a directory guaranteed to exist
-    if((chdir("/")) < 0)
-    {
-        // Log failure and exit
-        syslog(LOG_ERR, "Could not change working directory to /");
- 
-        // If our guaranteed directory does not exist, terminate the child process to ensure
-        // the daemon has not been hijacked
-        exit(EXIT_FAILURE);
-    }
- 
-    // A daemon cannot use the terminal, so close standard file descriptors for security reasons
-//    close(STDIN_FILENO);
-//    close(STDOUT_FILENO);
-//    close(STDERR_FILENO);
- 
-    // Daemon-specific intialization should go here
-    const int SLEEP_INTERVAL = 5;
-
-    init(index);
+    const int NumDevices = 1;
+    for( int i = 0; i < NumDevices; i++ )
+        init( i );
   
-    // Enter daemon loop
-    pthread_join(msd_tx_id, NULL);
+    // Block until thread killed
     pthread_join(msd_rx_id, NULL);
 
-    // Close system logs for the child process
-    xclClose(uHandle);
-    syslog(LOG_NOTICE, "Stopping daemon-name");
-    closelog();
- 
+    // cleanup if thread returns
+    pthread_cancel(msd_tx_id);
+    comm_fini(g_sock_fd);
+    //xclClose(uHandle);
+
     // Terminate the child process when the daemon completes
     exit(EXIT_SUCCESS);
 }
