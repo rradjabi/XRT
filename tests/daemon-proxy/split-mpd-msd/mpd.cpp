@@ -38,6 +38,7 @@ pthread_t mpd_tx_id;
 pthread_t mpd_rx_id;
 
 int g_sock_fd;
+char g_dev_addr[7]; // 7 = strlen( "xx:xx.x" )
 
 void *mpd_tx(void *handle_ptr)
 {
@@ -150,15 +151,22 @@ int init( unsigned idx )
     }
 
     uHandle = xclOpen(deviceIndex, NULL, XCL_INFO);
-    struct s_handle devHandle = { uHandle };
 
     if( xclGetDeviceInfo2(uHandle, &deviceInfo) ) {
         throw std::runtime_error("Unable to obtain device information");
         return -EBUSY;
     }
+    
+    // get virtual BDF of device
+    size_t max_path_size = 256;
+    char raw_path[max_path_size] = {0};
+    xclGetSysfsPath(uHandle, "", "", raw_path, max_path_size);
+    strncpy(g_dev_addr, raw_path + strlen("/sys/bus/pci/devices/0000:"), strlen("xx:xx.x"));
+    std::cout << "device address: " << g_dev_addr << std::endl;
 
     mpd_comm_init( &g_sock_fd );
 
+    struct s_handle devHandle = { uHandle };
     pthread_create(&mpd_rx_id, NULL, mpd_rx, &devHandle);
     pthread_create(&mpd_tx_id, NULL, mpd_tx, &devHandle);
 }
