@@ -1,0 +1,17 @@
+{
+    "device":
+    {
+        "actual": "0a:00.0",
+        "virtual": "09:00.0"
+    },
+    "device":
+    {
+        "actual": "02:00.0",
+        "virtual": "09:00.0"
+    },
+    "device":
+    {
+        "actual": "a1:00.0",
+        "virtual": "07:00.0"
+    }
+}

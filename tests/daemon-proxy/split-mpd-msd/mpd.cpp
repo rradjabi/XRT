@@ -74,7 +74,7 @@ void *mpd_tx(void *handle_ptr)
                 exit(1);
             }
         }
-        
+
         std::cout << "[MPD-TX]:" << xferCount << ".2 send args over socket\n";
         send_args( g_sock_fd, &args );
         std::cout << "[MPD-TX]:" << xferCount << ".3 send payload over socket\n";
@@ -106,11 +106,11 @@ void *mpd_rx(void *handle_ptr)
         std::cout << "[MPD-RX]:" << xferCount << ".1 recv_args\n";
         if( recv_args( g_sock_fd, reply, &args ) <= 0 )
             break;
-        
+
         args.data = pdata; // must do this after recv_args
         args.is_tx = false;
 
-        
+
         std::cout << "[MPD-RX]:" << xferCount << ".2 resize buffer\n";
         if( args.sz > prev_sz ) {
             std::cout << "args.sz(" << args.sz << ") > prev_sz(" << prev_sz << ") \n";
@@ -145,24 +145,15 @@ int init( unsigned idx )
     xclDeviceInfo2 deviceInfo;
     unsigned deviceIndex = idx;
 
-    if( deviceIndex >= xclProbe() ) {
-        throw std::runtime_error("Cannot find specified device index");
-        return -ENODEV;
-    }
-
     uHandle = xclOpen(deviceIndex, NULL, XCL_INFO);
 
-    if( xclGetDeviceInfo2(uHandle, &deviceInfo) ) {
-        throw std::runtime_error("Unable to obtain device information");
-        return -EBUSY;
-    }
-    
-    // get virtual BDF of device
-    size_t max_path_size = 256;
-    char raw_path[max_path_size] = {0};
-    xclGetSysfsPath(uHandle, "", "", raw_path, max_path_size);
-    strncpy(g_dev_addr, raw_path + strlen("/sys/bus/pci/devices/0000:"), strlen("xx:xx.x"));
-    std::cout << "device address: " << g_dev_addr << std::endl;
+    //~ // get virtual BDF of device
+    //~ size_t max_path_size = 256;
+    //~ char raw_path[max_path_size] = {0};
+    //~ xclGetSysfsPath(uHandle, "", "", raw_path, max_path_size);
+    //~ strncpy(g_dev_addr, raw_path + strlen("/sys/bus/pci/devices/0000:"), strlen("xx:xx.x"));
+
+    std::cout << "device address: " << get_bdf_from_device( uHandle )/*g_dev_addr*/ << std::endl;
 
     mpd_comm_init( &g_sock_fd );
 
@@ -179,36 +170,35 @@ void printHelp( void )
 
 int main(int argc, char *argv[])
 {
-    unsigned index = 0;
-    int c;
+    int numDevs = xclProbe();
 
-    while ((c = getopt(argc, argv, "d:h:")) != -1)
+    if( numDevs <= 0 )
+        return -ENODEV;
+
+    for( int i = 0; i < numDevs; i++ )
     {
-        switch (c)
-        {
-        case 'd':
-            index = std::atoi(optarg);
-            break;
-        case 'h':
-            printHelp();
-            return 0;
-        default:
-            printHelp();
-            return -1;
+        int ret = fork();
+        if( ret < 0 ) {
+            std::cout << "Failed to create child process: " << errno << std::endl;
+            exit( errno );
         }
+        if( ret == 0 ) { // child
+            init( i );
+            break;
+        }
+        // parent continues but will never create thread, and eventually exit
+        std::cout << "New child process: " << ret << std::endl;
     }
 
-    init(index);
-  
     // Enter daemon loop
-    pthread_join(mpd_tx_id, NULL);
+    pthread_join( mpd_tx_id, NULL );
 
     // cleanup if thread returns
-    pthread_cancel(mpd_rx_id);
-    comm_fini(g_sock_fd);
+    pthread_cancel( mpd_rx_id );
+    comm_fini( g_sock_fd );
     //xclClose(uHandle);
 
     // Terminate the child process when the daemon completes
-    exit(EXIT_SUCCESS);
+    exit( EXIT_SUCCESS );
 }
 

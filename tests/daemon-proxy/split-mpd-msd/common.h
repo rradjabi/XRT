@@ -80,7 +80,7 @@ int recv_args( int sock, char* msg_buf, struct drm_xocl_sw_mailbox *args )
     int num = recv( sock, msg_buf, sizeof(struct drm_xocl_sw_mailbox), 0 );
     if( num < 0 )
         return num;
-        
+
     memcpy( (void *)args, (void *)msg_buf, sizeof(struct drm_xocl_sw_mailbox) );
     std::cout  << "args->sz: " << args->sz << std::endl;
     return num;
@@ -92,10 +92,10 @@ int recv_data( int sock, uint32_t *pdata, int buflen )
     unsigned char *pbuf = reinterpret_cast<unsigned char*>(pdata);
     while( buflen > 0 ) {
         num = recv( sock, pbuf, buflen, 0 );
-        
+
         if( num == 0 )
             break;
-            
+
         if( num < 0 ) {
             std::cout << "Error, failed to recv: " << num << ", errno: " << errno << " errstr: " << strerror(errno) << std::endl;
             return num;
@@ -206,7 +206,7 @@ static void msd_comm_init(int *handle)//, int &sockfd, int &connfd, const int po
     exit(100);
 }
 
-    
+
 // example code to setup communication channel between vm and host
 // tcp is being used here as example.
 // cloud vendor should implements this function
@@ -250,3 +250,26 @@ static void comm_fini(int handle)
     close(handle);
 }
 
+/*
+ * return bdf string from open device handle
+ */
+static std::string get_bdf_from_device( xclDeviceHandle handle )
+{
+    size_t max_path_size = 256;
+    char raw_path[max_path_size] = {0};
+    xclGetSysfsPath(handle, "", "", raw_path, max_path_size);
+
+    return std::string( raw_path ).substr( strlen("/sys/bus/pci/devices/0000:"), strlen("xx:xx.x") );
+}
+
+/*
+ * return bdf string from open device handle
+ */
+static std::string get_bdf_from_device_mgmt( xclDeviceHandle handle )
+{
+    size_t max_path_size = 256;
+    char raw_path[max_path_size] = {0};
+    xclGetSysfsPathMgmt(handle, "", "", raw_path, max_path_size);
+
+    return std::string( raw_path ).substr( strlen("/sys/bus/pci/devices/0000:"), strlen("xx:xx.x") );
+}
