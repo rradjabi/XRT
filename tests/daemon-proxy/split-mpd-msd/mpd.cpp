@@ -147,15 +147,15 @@ int init( unsigned idx )
 
     uHandle = xclOpen(deviceIndex, NULL, XCL_INFO);
 
-    //~ // get virtual BDF of device
-    //~ size_t max_path_size = 256;
-    //~ char raw_path[max_path_size] = {0};
-    //~ xclGetSysfsPath(uHandle, "", "", raw_path, max_path_size);
-    //~ strncpy(g_dev_addr, raw_path + strlen("/sys/bus/pci/devices/0000:"), strlen("xx:xx.x"));
-
-    std::cout << "device address: " << get_bdf_from_device( uHandle )/*g_dev_addr*/ << std::endl;
+    std::string virt_bdf = get_bdf_from_device( uHandle );
+    std::cout << "device address: " << virt_bdf << std::endl;
 
     mpd_comm_init( &g_sock_fd );
+
+    if( send( g_sock_fd, (const void*)(virt_bdf.c_str()), sizeof(virt_bdf), 0 ) == -1 ) {
+        std::cout << "MPD: failed to send virtual device address: " << virt_bdf << std::endl;
+        exit(errno);
+    }
 
     struct s_handle devHandle = { uHandle };
     pthread_create(&mpd_rx_id, NULL, mpd_rx, &devHandle);

@@ -40,7 +40,7 @@ pthread_t msd_tx_id;
 pthread_t msd_rx_id;
 
 int g_sock_fd;
-
+int g_num_devices = 0;
 std::vector<std::pair<std::string,std::string>> master_dev_list;
 
 std::string ptree_lookup_virt_bdf( std::string &str, boost::property_tree::ptree &pt )
@@ -76,12 +76,11 @@ bool create_device_list( void )
     boost::property_tree::ptree pt;
     boost::property_tree::read_json("bdf_lut.json", pt);
 
-    // scan to create device list dev_list
-    int device_list_size = 1; // TODO, get size from json, compare to xclProbe()
+    g_num_devices = pt.count("device");
 
     // make a sorted device list using scan() results (dev_list) and ptree (pt),
     // make a std::pair()
-    for( int i = 0; i < device_list_size; i++ ) {
+    for( int i = 0; i < g_num_devices; i++ ) {
         // get actual bdf
         xclDeviceHandle hand = xclOpenMgmt(i, NULL, XCL_INFO);
         std::string act_bdf = get_bdf_from_device_mgmt( hand );
@@ -202,8 +201,28 @@ int init( unsigned idx )
 {
     xclDeviceInfo2 deviceInfo;
     xclErrorStatus m_errinfo;
-    unsigned deviceIndex = idx;
+    unsigned deviceIndex = 0;
 
+    msd_comm_init(&g_sock_fd);
+
+    // inside forked child device now
+
+    std::string virt_bdf_from_mpd = "xx:xx.x";
+    recv( g_sock_fd, (void *)(virt_bdf_from_mpd.c_str()), sizeof(virt_bdf_from_mpd), 0 );
+    std::cout << "virt bdf recv(): " << virt_bdf_from_mpd << std::endl;
+
+    // lookup device id of virt_bdf
+    std::vector<std::pair<std::string,std::string>>::iterator it;
+    for( it = master_dev_list.begin(); it != master_dev_list.end(); it++ ) {
+        if( it->second != virt_bdf_from_mpd )
+            break;
+
+        deviceIndex = std::distance( master_dev_list.begin(), it );
+        std::cout << "Found match at index: " << deviceIndex << " actual bdf: " << it->first << std::endl;
+    }
+
+    // before we assign a device to a socket, we must pair it, sent over
+    // wire from mpd in first message
     xclDeviceHandle uHandle = xclOpenMgmt(deviceIndex, NULL, XCL_INFO);
 
     if( !uHandle )
@@ -214,7 +233,6 @@ int init( unsigned idx )
         return -EBUSY;
     }
 
-    msd_comm_init(&g_sock_fd);
 
     struct s_handle devHandle = { uHandle };
     pthread_create(&msd_tx_id, NULL, msd_tx, &devHandle);
@@ -232,8 +250,7 @@ int main(int argc, char *argv[])
     if( !create_device_list() )
         exit( ENODEV );
 
-    const int NumDevices = 1; // set to the number of devices on host
-    for( int i = 0; i < NumDevices; i++ )
+    for( int i = 0; i < g_num_devices; i++ )
         init( i );
 
     // Block until thread killed
