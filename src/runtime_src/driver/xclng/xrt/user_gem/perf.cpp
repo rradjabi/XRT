@@ -1001,6 +1001,22 @@ namespace xocl {
     return 0;
   }
 
+  int XOCLShim::xclGetSysfsPathMgmt(const char* subdev, const char* entry, char* sysfsPath, size_t size) {
+    auto dev = pcidev::get_dev(mBoardNumber);
+    std::string subdev_str = std::string(subdev);
+    std::string entry_str = std::string(entry);
+    if (mLogStream.is_open()) {
+      mLogStream << "Retrieving [sysfs root]";
+      mLogStream << subdev_str << "/" << entry_str;
+      mLogStream << std::endl;
+    }
+    std::string sysfsFullPath = dev->mgmt->get_sysfs_path(subdev_str, entry_str);
+    strncpy(sysfsPath, sysfsFullPath.c_str(), size);
+    sysfsPath[size - 1] = '\0';
+    return 0;
+  }
+
+
   int XOCLShim::xclGetDebugProfileDeviceInfo(xclDebugProfileDeviceInfo* info) {
     auto dev = pcidev::get_dev(mBoardNumber);
     uint16_t user_instance = dev->user->instance;
@@ -1139,6 +1155,14 @@ int xclGetSysfsPath(xclDeviceHandle handle, const char* subdev,
   if (!drv)
     return -1;
   return drv->xclGetSysfsPath(subdev, entry, sysfsPath, size);
+}
+
+int xclGetSysfsPathMgmt(xclDeviceHandle handle, const char* subdev,
+			const char* entry, char* sysfsPath, size_t size) {
+  xocl::XOCLShim *drv = xocl::XOCLShim::handleCheckMgmt(handle);
+  if (!drv)
+    return -1;
+  return drv->xclGetSysfsPathMgmt(subdev, entry, sysfsPath, size);
 }
 
 int xclGetDebugProfileDeviceInfo(xclDeviceHandle handle, xclDebugProfileDeviceInfo* info)

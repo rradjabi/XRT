@@ -243,6 +243,7 @@ public:
 
     // Experimental sysfs API
     int xclGetSysfsPath(const char* subdev, const char* entry, char* sysfsPath, size_t size);
+    int xclGetSysfsPathMgmt(const char *subdev, const char *entry, char *sysfsPath, size_t size);
 
     // Experimental debug profile device data API
     int xclGetDebugProfileDeviceInfo(xclDebugProfileDeviceInfo* info);

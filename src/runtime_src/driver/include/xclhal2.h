@@ -1245,7 +1245,8 @@ XCL_DRIVER_DLLESPEC size_t xclPerfMonReadTrace(xclDeviceHandle handle, enum xclP
  */
 XCL_DRIVER_DLLESPEC int xclGetSysfsPath(xclDeviceHandle handle, const char* subdev,
                                         const char* entry, char* sysfsPath, size_t size);
-
+XCL_DRIVER_DLLESPEC int xclGetSysfsPathMgmt(xclDeviceHandle handle, const char *subdev,
+					const char *entry, char *sysfsPath, size_t size);
 /**
  * Experimental APIs for reading debug and profile
  *
