@@ -32,12 +32,6 @@
 
 #define INIT_BUF_SZ 64
 
-xclDeviceHandle uHandle;
-pthread_t mpd_tx_id;
-pthread_t mpd_rx_id;
-
-int g_sock_fd;
-
 /*
  * return bdf string from open device handle
  */
@@ -55,7 +49,7 @@ static void local_init(int local_dev_idx, int *handle)
     int fd;
 
     // how to map device index to renderD#?
-    const char device_name[] = "/dev/dri/renderD129";
+    const char device_name[] = "/dev/dri/renderD128";
     if (handle == NULL) {
         perror("null handle");
         exit(1);
@@ -66,11 +60,6 @@ static void local_init(int local_dev_idx, int *handle)
     }
 
     *handle = fd;
-}
-
-static void local_fini(int handle)
-{
-    xclClose((xclDeviceHandle)handle);
 }
 
 // example code to setup communication channel between vm and host
@@ -103,8 +92,8 @@ static void mpd_comm_init(int *handle)
 
     // assign IP, PORT
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr( /*host_ip.c_str()*/ "127.0.0.1" );
-    servaddr.sin_port = htons( 8888/*std::stoi( host_port.c_str() )*/ );
+    servaddr.sin_addr.s_addr = inet_addr( host_ip.c_str() );
+    servaddr.sin_port = htons( std::stoi( host_port.c_str() ) );
 
     // connect the client socket to server socket
     if (connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) {
@@ -170,11 +159,11 @@ void run(int local_fd, int comm_fd)
 
             /* write args to comm socket */
             std::cout << "[MPD-TX]:" << mpd_tx_count << ".2 send args over socket\n";
-            send_args( g_sock_fd, &args );
+            send_args( comm_fd, &args );
 
             /* write data to comm socket */
             std::cout << "[MPD-TX]:" << mpd_tx_count << ".3 send payload over socket\n";
-            send_data( g_sock_fd, args.data, args.sz );
+            send_data( comm_fd, args.data, args.sz );
 
             std::cout << "[MPD-TX]:" << mpd_tx_count << " complete.\n";
             mpd_tx_count++;
@@ -245,7 +234,7 @@ int main(int argc, char *argv[])
     local_init(local_dev_idx, &local_fd);
     mpd_comm_init(&comm_fd);
 
-    run(local_fd,comm_fd);
+    run(local_fd, comm_fd);
 
     comm_fini(comm_fd);
     local_fini(local_fd);

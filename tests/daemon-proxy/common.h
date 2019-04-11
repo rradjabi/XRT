@@ -113,3 +113,8 @@ static void comm_fini(int handle)
 {
     close(handle);
 }
+
+static void local_fini(int handle)
+{
+    close(handle);
+}

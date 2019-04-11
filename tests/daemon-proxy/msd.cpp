@@ -36,10 +36,9 @@
 
 #define INIT_BUF_SZ 64
 
-pthread_t msd_tx_id;
-pthread_t msd_rx_id;
+//~ pthread_t msd_tx_id;
+//~ pthread_t msd_rx_id;
 
-int g_sock_fd;
 int g_num_devices = 0;
 std::vector<std::pair<std::string,std::string>> master_dev_list;
 
@@ -110,13 +109,31 @@ bool create_device_list( void )
     return true;
 }
 
+static void local_init(int local_dev_idx, int *handle)
+{
+    int fd;
+
+    // how to map device index to renderD#?
+    const char device_name[] = "/dev/dri/renderD128";
+    if (handle == NULL) {
+        perror("null handle");
+        exit(1);
+    }
+    if ((fd = open(device_name,O_RDWR)) == -1) {
+        perror("open");
+        exit(1);
+    }
+
+    *handle = fd;
+}
+
+
 // example code to setup communication channel between vm and host
 // tcp is being used here as example.
 // cloud vendor should implements this function
 static void msd_comm_init(int *handle)
 {
     int sockfd, connfd, len;
-//    int len;
     struct sockaddr_in servaddr, cli;
 
     // socket create and verification
@@ -186,169 +203,154 @@ static void msd_comm_init(int *handle)
     exit(100);
 }
 
-void *msd_tx(void *handle_ptr)
+//~ int init( unsigned idx )
+//~ {
+    //~ xclDeviceInfo2 deviceInfo;
+    //~ xclErrorStatus m_errinfo;
+    //~ unsigned deviceIndex = 0;
+
+    //~ msd_comm_init(&g_sock_fd);
+
+    //~ // inside forked child device now
+
+    //~ std::string virt_bdf_from_mpd = "xx:xx.x";
+    //~ recv( g_sock_fd, (void *)(virt_bdf_from_mpd.c_str()), sizeof(virt_bdf_from_mpd), 0 );
+    //~ std::cout << "virt bdf recv(): " << virt_bdf_from_mpd << std::endl;
+
+    //~ // lookup device id of virt_bdf
+    //~ std::vector<std::pair<std::string,std::string>>::iterator it;
+    //~ for( it = master_dev_list.begin(); it != master_dev_list.end(); it++ ) {
+        //~ if( it->second != virt_bdf_from_mpd )
+            //~ break;
+
+        //~ deviceIndex = std::distance( master_dev_list.begin(), it );
+        //~ std::cout << "Found match at index: " << deviceIndex << " actual bdf: " << it->first << std::endl;
+    //~ }
+
+    //~ // before we assign a device to a socket, we must pair it, sent over
+    //~ // wire from mpd in first message
+    //~ xclDeviceHandle uHandle = xclOpenMgmt(deviceIndex, NULL, XCL_INFO);
+
+    //~ if( !uHandle )
+        //~ throw std::runtime_error("Failed to open mgmt device.");
+
+    //~ if( xclGetDeviceInfo2(uHandle, &deviceInfo) ) {
+        //~ throw std::runtime_error("Unable to obtain device information");
+        //~ return -EBUSY;
+    //~ }
+
+
+    //~ struct s_handle devHandle = { uHandle };
+    //~ pthread_create(&msd_tx_id, NULL, msd_tx, &devHandle);
+    //~ pthread_create(&msd_rx_id, NULL, msd_rx, &devHandle);
+//~ }
+
+static void run(int local_fd, int comm_fd)
 {
-    int xferCount = 0;
-    int ret;
-    struct s_handle *s_handle_ptr = (struct s_handle *)handle_ptr;
-    xclDeviceHandle handle = s_handle_ptr->uDevHandle;
+    /* inits for mailbox args handling */
     size_t prev_sz = INIT_BUF_SZ;
     struct drm_xocl_sw_mailbox args = { 0, 0, true, prev_sz, 0 };
     args.data = (uint32_t *)malloc(prev_sz);
-
-    std::cout << "              [XCLMGMT->XOCL Intercept ON (HAL)]\n";
-    for( ;; ) {
-        std::cout << "              [MSD-TX]:" << xferCount << ".1 MSD TX IOCTL \n";
-        args.sz = prev_sz;
-        ret = xclMSD(handle, &args);
-        if( ret != 0 ) {
-            if( errno != EMSGSIZE ) {
-                std::cout << "              [MSD-TX]: transfer failed for other reason: errno:" << errno
-                          << ", str: " << strerror(errno) << std::endl;
-                exit(1);
-            }
-
-            if( resize_buffer( args.data, args.sz ) != 0 ) {
-                std::cout << "              [MSD-TX]: resize_buffer() failed...exiting\n";
-                exit(1);
-            }
-
-            prev_sz = args.sz; // store the newly alloc'd size
-            ret = xclMSD(handle, &args);
-
-            if( ret != 0 ) {
-                std::cout << "              [MSD-TX]: second transfer failed, exiting.\n";
-                exit(1);
-            }
-        }
-
-        std::cout << "              [MSD-TX]:" << xferCount << ".2 send args over socket \n";
-        send_args( g_sock_fd, &args );
-        std::cout << "              [MSD-TX]:" << xferCount << ".3 send data over socket \n";
-        send_data( g_sock_fd, args.data, args.sz );
-        std::cout << "              [MSD-TX]:" << xferCount << " complete.\n";
-        xferCount++;
-    }
-    std::cout << "              [MSD-TX]: exit.\n";
-    xclClose(handle);
-}
-
-void *msd_rx(void *handle_ptr)
-{
-    int xferCount = 0;
-    int ret;
-    struct s_handle *s_handle_ptr = (struct s_handle *)handle_ptr;
-    xclDeviceHandle handle = s_handle_ptr->uDevHandle;
-    size_t prev_sz = INIT_BUF_SZ;
-    struct drm_xocl_sw_mailbox args = { 0, 0, false, prev_sz, 0 };
-    args.data = (uint32_t *)malloc(prev_sz);
+    char client_message[MSG_SZ];
     uint32_t *pdata = args.data;
 
-    char client_message[MSG_SZ];
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    int ret = 0;
+#define max(a,b) (a>b?a:b)
+    for (;;) {
+        FD_SET(local_fd, &rfds);
+        FD_SET(comm_fd, &rfds);
+        ret = select(max(comm_fd, local_fd)+1, &rfds, NULL, NULL, NULL);
 
-    for( ;; ) {
-        std::cout << "              [MSD-RX]:" << xferCount << ".1 recv_args\n";
-        if( recv_args( g_sock_fd, client_message, &args ) <= 0 )
+        if(ret == -1) {
             break;
-
-        args.data = pdata; // must do this after recv_args
-        args.is_tx = false; // must do this
-
-        std::cout << "args.sz:" << args.sz << ", prev_sz:" << prev_sz << "\n";
-
-        std::cout << "              [MSD-RX]:" << xferCount << ".2 resize buffer\n";
-        if( args.sz > prev_sz ) {
-            std::cout << "args.sz(" << args.sz << ") > prev_sz(" << prev_sz << ") \n";
-            resize_buffer( args.data, args.sz );
-            prev_sz = args.sz;
-        } else {
-            std::cout << "don't need to resize buffer\n";
         }
 
-        std::cout << "              [MSD-RX]:" << xferCount << ".3 recv_data\n";
-        if( recv_data( g_sock_fd, args.data, args.sz ) != 0 ) {
-            std::cout << "bad retval from recv_data(), exiting.\n";
-            exit(1);
+        if(FD_ISSET(local_fd, &rfds)) {
+            static int msd_tx_count = 0;
+            std::cout << "              [MSD-TX]:" << msd_tx_count << ".1 MSD TX IOCTL \n";
+            args.sz = prev_sz;
+            //ret = xclMSD(handle, &args);
+            ret = read( local_fd, &args, (sizeof(struct drm_xocl_sw_mailbox) + args.sz) );
+            if( ret < 0 ) {
+                if( errno != EMSGSIZE ) {
+                    std::cout << "              [MSD-TX]: transfer failed for other reason: errno:" << errno
+                              << ", str: " << strerror(errno) << std::endl;
+                    exit(1);
+                }
+
+                if( resize_buffer( args.data, args.sz ) != 0 ) {
+                    std::cout << "              [MSD-TX]: resize_buffer() failed...exiting\n";
+                    exit(1);
+                }
+
+                prev_sz = args.sz; // store the newly alloc'd size
+                //ret = xclMSD(handle, &args);
+                ret = read( local_fd, &args, (sizeof(struct drm_xocl_sw_mailbox) + args.sz) );
+                if( ret <= 0 ) {
+                    std::cout << "              [MSD-TX]: second transfer failed, exiting.\n";
+                    exit(1);
+                }
+            }
+
+            std::cout << "              [MSD-TX]:" << msd_tx_count << ".2 send args over socket \n";
+            send_args( comm_fd, &args );
+            std::cout << "              [MSD-TX]:" << msd_tx_count << ".3 send data over socket \n";
+            send_data( comm_fd, args.data, args.sz );
+            std::cout << "              [MSD-TX]:" << msd_tx_count << " complete.\n";
+            msd_tx_count++;
         }
 
-        std::cout << "              [MSD-RX]:" << xferCount << ".4 xclMSD \n";
-        ret = xclMSD(handle, &args);
-        if( ret != 0 ) {
-            std::cout << "          [MSD-RX]:" << xferCount << " transfer error: " << strerror(errno) << std::endl;
-            exit(1);
+        if(FD_ISSET(comm_fd, &rfds)) {
+            static int msd_rx_count = 0;
+            std::cout << "              [MSD-RX]:" << msd_rx_count << ".1 recv_args\n";
+            if( recv_args( comm_fd, client_message, &args ) <= 0 )
+                break;
+
+            args.data = pdata; // must do this after recv_args
+            args.is_tx = false; // must do this
+
+            std::cout << "args.sz:" << args.sz << ", prev_sz:" << prev_sz << "\n";
+
+            std::cout << "              [MSD-RX]:" << msd_rx_count << ".2 resize buffer\n";
+            if( args.sz > prev_sz ) {
+                std::cout << "args.sz(" << args.sz << ") > prev_sz(" << prev_sz << ") \n";
+                resize_buffer( args.data, args.sz );
+                prev_sz = args.sz;
+            } else {
+                std::cout << "don't need to resize buffer\n";
+            }
+
+            std::cout << "              [MSD-RX]:" << msd_rx_count << ".3 recv_data\n";
+            if( recv_data( comm_fd, args.data, args.sz ) != 0 ) {
+                std::cout << "bad retval from recv_data(), exiting.\n";
+                exit(1);
+            }
+
+            std::cout << "              [MSD-RX]:" << msd_rx_count << ".4 xclMSD \n";
+            //ret = xclMSD(handle, &args);
+            ret = write( local_fd, &args, (sizeof(struct drm_xocl_sw_mailbox) + args.sz) );
+            if( ret != 0 ) {
+                std::cout << "          [MSD-RX]:" << msd_rx_count << " transfer error: " << strerror(errno) << std::endl;
+                exit(1);
+            }
+            std::cout << "              [MSD-RX]:" << msd_rx_count << " complete.\n";
+
+            msd_rx_count++;
         }
-        std::cout << "              [MSD-RX]:" << xferCount << " complete.\n";
-
-        xferCount++;
     }
-    std::cout << "              [MSD-RX]:" << xferCount << " exit.\n";
-    xclClose(handle);
 }
 
-int init( unsigned idx )
+int main( void )
 {
-    xclDeviceInfo2 deviceInfo;
-    xclErrorStatus m_errinfo;
-    unsigned deviceIndex = 0;
+    int comm_fd, local_fd;
 
-    msd_comm_init(&g_sock_fd);
+    msd_comm_init(&comm_fd);
+    local_init(0, &local_fd);
+    run(local_fd, comm_fd);
+    comm_fini(comm_fd);
+    local_fini(local_fd);
 
-    // inside forked child device now
-
-    std::string virt_bdf_from_mpd = "xx:xx.x";
-    recv( g_sock_fd, (void *)(virt_bdf_from_mpd.c_str()), sizeof(virt_bdf_from_mpd), 0 );
-    std::cout << "virt bdf recv(): " << virt_bdf_from_mpd << std::endl;
-
-    // lookup device id of virt_bdf
-    std::vector<std::pair<std::string,std::string>>::iterator it;
-    for( it = master_dev_list.begin(); it != master_dev_list.end(); it++ ) {
-        if( it->second != virt_bdf_from_mpd )
-            break;
-
-        deviceIndex = std::distance( master_dev_list.begin(), it );
-        std::cout << "Found match at index: " << deviceIndex << " actual bdf: " << it->first << std::endl;
-    }
-
-    // before we assign a device to a socket, we must pair it, sent over
-    // wire from mpd in first message
-    xclDeviceHandle uHandle = xclOpenMgmt(deviceIndex, NULL, XCL_INFO);
-
-    if( !uHandle )
-        throw std::runtime_error("Failed to open mgmt device.");
-
-    if( xclGetDeviceInfo2(uHandle, &deviceInfo) ) {
-        throw std::runtime_error("Unable to obtain device information");
-        return -EBUSY;
-    }
-
-
-    struct s_handle devHandle = { uHandle };
-    pthread_create(&msd_tx_id, NULL, msd_tx, &devHandle);
-    pthread_create(&msd_rx_id, NULL, msd_rx, &devHandle);
-}
-
-void printHelp( void )
-{
-    std::cout << "Usage: <daemon_name> -d <device_index>" << std::endl;
-    std::cout << "      '-d' is optional and will default to '0'" <<std::endl;
-}
-
-int main(int argc, char *argv[])
-{
-    if( !create_device_list() )
-        exit( ENODEV );
-
-    for( int i = 0; i < g_num_devices; i++ )
-        init( i );
-
-    // Block until thread killed
-    pthread_join(msd_rx_id, NULL);
-
-    // cleanup if thread returns
-    pthread_cancel(msd_tx_id);
-    comm_fini(g_sock_fd);
-    //xclClose(uHandle);
-
-    // Terminate the child process when the daemon completes
-    exit(EXIT_SUCCESS);
+    return 0;
 }
