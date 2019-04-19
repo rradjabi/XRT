@@ -1,7 +1,7 @@
 /*
  * ryan.radjabi@xilinx.com
  *
- * Reference for daemonization: https://gist.github.com/alexdlaird/3100f8c7c96871c5b94e
+ * Private Cloud Management Service Daemon
  */
 #include <dirent.h>
 #include <iterator>
@@ -31,35 +31,7 @@
 #include "xclhal2.h"
 #include "common.h"
 
-#include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/json_parser.hpp>
-
 #define INIT_BUF_SZ 64
-
-//~ pthread_t msd_tx_id;
-//~ pthread_t msd_rx_id;
-
-int g_num_devices = 0;
-std::vector<std::pair<std::string,std::string>> master_dev_list;
-
-std::string ptree_lookup_virt_bdf( std::string &str, boost::property_tree::ptree &pt )
-{
-    for( boost::property_tree::ptree::const_iterator it = pt.begin(); it != pt.end(); it++ ) {
-        if( it->first == "device" ) {
-            std::string act_bdf, virt_bdf;
-            for( auto &subv : it->second ) {
-                if( subv.first == "actual" )
-                    act_bdf = subv.second.get_value<std::string>();
-
-                if( subv.first == "virtual" )
-                    virt_bdf = subv.second.get_value<std::string>();
-            }
-            if( str == act_bdf ) // string::compare to ignore the .0 vs .1 function at end
-                return virt_bdf;
-        }
-    }
-    return "";
-}
 
 // example code to setup communication channel between vm and host
 // tcp is being used here as example.
@@ -138,7 +110,6 @@ static void msd_comm_init(int *handle)
 
 static void run(int local_fd, int comm_fd)
 {
-    /* inits for mailbox args handling */
     size_t prev_sz = INIT_BUF_SZ;
     struct drm_xocl_sw_mailbox args = { prev_sz, 0, true, 0, 0 };
     args.data = (uint32_t *)malloc(prev_sz);
@@ -161,38 +132,15 @@ static void run(int local_fd, int comm_fd)
         if(FD_ISSET(local_fd, &rfds)) {
             static int msd_tx_count = 0;
             std::cout << "              [MSD-TX]:" << msd_tx_count << ".1 MSD TX IOCTL \n";
-/* read from mgmtpf */
-//-            args.sz = prev_sz;
-//-            //ret = xclMSD(handle, &args);
-//-            ret = read( local_fd, &args, (sizeof(struct drm_xocl_sw_mailbox) + args.sz) );
-//-            if( ret <= 0 ) {
-//-                if( errno != EMSGSIZE ) {
-//-                    std::cout << "              [MSD-TX]: transfer failed for other reason: errno:" << errno
-//-                              << ", str: " << strerror(errno) << std::endl;
-//-                    exit(1);
-//-                }
-//-
-//-                if( resize_buffer( args.data, args.sz ) != 0 ) {
-//-                    std::cout << "              [MSD-TX]: resize_buffer() failed...exiting\n";
-//-                    exit(1);
-//-                }
-//-
-//-                prev_sz = args.sz; // store the newly alloc'd size
-//-                //ret = xclMSD(handle, &args);
-//-                ret = read( local_fd, &args, (sizeof(struct drm_xocl_sw_mailbox) + args.sz) );
-//-                if( ret < 0 ) {
-//-                    std::cout << "              [MSD-TX]: second transfer failed, exiting.\n";
-//-                    exit(1);
-//-                }
-//-            }
-            if( read_from_func( local_fd, &args, prev_sz ) )
+            if( local_read( local_fd, &args, prev_sz ) )
                 exit(errno);
-/* read from mgmtpf complete */
 
             std::cout << "              [MSD-TX]:" << msd_tx_count << ".2 send args over socket \n";
-            write_args( comm_fd, &args );
+            comm_write_args( comm_fd, &args );
+
             std::cout << "              [MSD-TX]:" << msd_tx_count << ".3 send data over socket \n";
-            write_data( comm_fd, args.data, args.sz );
+            comm_write_data( comm_fd, args.data, args.sz );
+
             std::cout << "              [MSD-TX]:" << msd_tx_count << " complete.\n";
             msd_tx_count++;
         }
@@ -200,13 +148,11 @@ static void run(int local_fd, int comm_fd)
         if(FD_ISSET(comm_fd, &rfds)) {
             static int msd_rx_count = 0;
             std::cout << "              [MSD-RX]:" << msd_rx_count << ".1 recv_args\n";
-            if( read_args( comm_fd, client_message, &args ) <= 0 )
+            if( comm_read_args( comm_fd, client_message, &args ) <= 0 )
                 break;
 
-            args.data = pdata; // must do this after recv_args
-            args.is_tx = false; // must do this
-
-            std::cout << "args.sz:" << args.sz << ", prev_sz:" << prev_sz << "\n";
+            args.data = pdata;  // must do this after receive args
+            args.is_tx = false; // must do this after receive args
 
             std::cout << "              [MSD-RX]:" << msd_rx_count << ".2 resize buffer\n";
             if( args.sz > prev_sz ) {
@@ -218,22 +164,14 @@ static void run(int local_fd, int comm_fd)
             }
 
             std::cout << "              [MSD-RX]:" << msd_rx_count << ".3 recv_data\n";
-            if( read_data( comm_fd, args.data, args.sz ) != 0 ) {
+            if( comm_read_data( comm_fd, args.data, args.sz ) != 0 ) {
                 std::cout << "bad retval from recv_data(), exiting.\n";
                 exit(1);
             }
 
             std::cout << "              [MSD-RX]:" << msd_rx_count << ".4 xclMSD \n";
-            //ret = xclMSD(handle, &args);
-/* write to mgmtpf */
-//-            ret = write( local_fd, &args, (sizeof(struct drm_xocl_sw_mailbox) + args.sz) );
-//-            if( ret != 0 ) {
-//-                std::cout << "          [MSD-RX]:" << msd_rx_count << " transfer error: " << strerror(errno) << std::endl;
-//-                exit(1);
-//-            }
-            if( write_to_func(local_fd, &args) )
+            if( local_write( local_fd, &args ) )
                 exit(errno);
-/* write to mgmtpf complete */
             std::cout << "              [MSD-RX]:" << msd_rx_count << " complete.\n";
 
             msd_rx_count++;
@@ -244,7 +182,9 @@ static void run(int local_fd, int comm_fd)
 int main( void )
 {
     int comm_fd, local_fd = -1;
-    const int numDevs = 1;//xclProbe();
+
+    /* is there an alternative to xclProbe() to get num devs? */
+    const int numDevs = 1;
 
     if (numDevs <= 0)
         return -ENODEV;

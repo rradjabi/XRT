@@ -1,7 +1,7 @@
-#include <stdio.h>  //printf
-#include <string.h> //strlen
-#include <sys/socket.h> //socket
-#include <arpa/inet.h>  //inet_addr
+#include <stdio.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <fstream>
 #include <sys/wait.h>
@@ -9,10 +9,6 @@
 #define MSG_SZ 128
 
 #define SA struct sockaddr
-
-struct s_handle {
-    xclDeviceHandle uDevHandle;
-};
 
 struct drm_xocl_sw_mailbox {
     size_t sz;
@@ -36,14 +32,12 @@ int resize_buffer( uint32_t *&buf, const size_t new_sz )
     return 0;
 }
 
-int read_from_func( int handle, struct drm_xocl_sw_mailbox *args, size_t &alloc_sz )
+int local_read( int handle, struct drm_xocl_sw_mailbox *args, size_t &alloc_sz )
 {
     int ret = 0;
     args->is_tx = true;
     args->sz = alloc_sz;
-    std::cout << "debug #before read\n";
     ret = read( handle, (void *)args, (sizeof(struct drm_xocl_sw_mailbox) + args->sz) );
-    std::cout << "debug #after read\n";
     if( ret <= 0 ) {
         // sw channel xfer error
         if( errno != EMSGSIZE ) {
@@ -62,11 +56,10 @@ int read_from_func( int handle, struct drm_xocl_sw_mailbox *args, size_t &alloc_
             return errno;
         }
     }
-    std::cout << "                [read from func]\n";
     return 0;
 }
 
-int write_to_func( int handle, struct drm_xocl_sw_mailbox *args )
+int local_write( int handle, struct drm_xocl_sw_mailbox *args )
 {
     int ret = 0;
     args->is_tx = false;
@@ -78,14 +71,20 @@ int write_to_func( int handle, struct drm_xocl_sw_mailbox *args )
     return 0;
 }
 
-int write_args( int fd, struct drm_xocl_sw_mailbox *args )
+/*
+ * comm write args
+ */
+int comm_write_args( int fd, struct drm_xocl_sw_mailbox *args )
 {
     if( write( fd, (const void*)(args), sizeof(struct drm_xocl_sw_mailbox) ) == -1 )
         exit(1);
     return 0;
 }
 
-int write_data( int fd, uint32_t *buf, int buflen )
+/*
+ * comm write data payload
+ */
+int comm_write_data( int fd, uint32_t *buf, int buflen )
 {
     void *vbuf = reinterpret_cast<void*>(buf);
     unsigned char *pbuf = (unsigned char *)vbuf;
@@ -99,7 +98,10 @@ int write_data( int fd, uint32_t *buf, int buflen )
     return 0;
 }
 
-int read_args( int fd, char* msg_buf, struct drm_xocl_sw_mailbox *args )
+/*
+ * comm read args
+ */
+int comm_read_args( int fd, char* msg_buf, struct drm_xocl_sw_mailbox *args )
 {
     int num = read( fd, msg_buf, sizeof(struct drm_xocl_sw_mailbox) );
     if( num < 0 )
@@ -110,7 +112,10 @@ int read_args( int fd, char* msg_buf, struct drm_xocl_sw_mailbox *args )
     return num;
 }
 
-int read_data( int fd, uint32_t *pdata, int buflen )
+/*
+ *  comm read data payload
+ */
+int comm_read_data( int fd, uint32_t *pdata, int buflen )
 {
     int num = 0;
     unsigned char *pbuf = reinterpret_cast<unsigned char*>(pdata);
@@ -132,10 +137,6 @@ int read_data( int fd, uint32_t *pdata, int buflen )
     return 0;
 }
 
-/*
- * Stub code that finishs the communication channel.
- * Cloud vendor should implement this function.
- */
 static void comm_fini(int handle)
 {
     close(handle);
