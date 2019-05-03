@@ -31,7 +31,6 @@
 #include "xclhal2.h"
 #include "common.h"
 
-#define INIT_BUF_SZ 64
 std::string host_ip;
 std::string host_port;
 std::string host_id;
@@ -69,77 +68,6 @@ static void mpd_comm_init(int *handle)
     }
 
     *handle = sockfd;
-}
-
-static void run(int local_fd, int comm_fd)
-{
-    size_t prev_sz = INIT_BUF_SZ;
-    struct drm_xocl_sw_mailbox args = { prev_sz, 0, true, 0, 0 };
-    args.data = (uint32_t *)malloc(prev_sz);
-    char reply[MSG_SZ];
-    uint32_t *pdata = args.data;
-
-    fd_set rfds;
-    FD_ZERO(&rfds);
-    int ret = 0;
-#define max(a,b) (a>b?a:b)
-    for (;;) {
-        FD_SET(local_fd, &rfds);
-        FD_SET(comm_fd, &rfds);
-        ret = select(max(comm_fd, local_fd)+1, &rfds, NULL, NULL, NULL);
-
-        if(ret == -1) {
-            break;
-        }
-
-        if(FD_ISSET(local_fd, &rfds)) {
-            static int mpd_tx_count = 0;
-            std::cout << "[MPD-TX]:" << mpd_tx_count << ".1 MPD TX IOCTL \n";
-            if( local_read( local_fd, &args, prev_sz ) )
-                exit(errno);
-
-            std::cout << "[MPD-TX]:" << mpd_tx_count << ".2 send args over socket\n";
-            comm_write_args( comm_fd, &args );
-
-            std::cout << "[MPD-TX]:" << mpd_tx_count << ".3 send payload over socket\n";
-            comm_write_data( comm_fd, args.data, args.sz );
-
-            std::cout << "[MPD-TX]:" << mpd_tx_count << " complete.\n";
-            mpd_tx_count++;
-        }
-
-        if(FD_ISSET(comm_fd, &rfds)) {
-            static int mpd_rx_count = 0;
-            std::cout << "[MPD-RX]:" << mpd_rx_count << ".1 recv_args\n";
-            if( comm_read_args( comm_fd, reply, &args ) <= 0 )
-                break;
-
-            args.data = pdata;  // must do this after receive args
-            args.is_tx = false; // must do this after receive args
-
-            std::cout << "[MPD-RX]:" << mpd_rx_count << ".2 resize buffer\n";
-            if( args.sz > prev_sz ) {
-                std::cout << "args.sz(" << args.sz << ") > prev_sz(" << prev_sz << ") \n";
-                resize_buffer( args.data, args.sz );
-                prev_sz = args.sz;
-            } else {
-                std::cout << "don't need to resize buffer\n";
-            }
-
-            std::cout << "[MPD-RX]:" << mpd_rx_count << ".3 recv_data \n";
-            if( comm_read_data( comm_fd, args.data, args.sz ) != 0 ) {
-                std::cout << "bad retval from recv_data(), exiting.\n";
-                exit(1);
-            }
-
-            std::cout << "[MPD-RX]:" << mpd_rx_count << ".4 xclMPD \n";
-            if( local_write( local_fd, &args ) )
-                exit(errno);
-            std::cout << "[MPD-RX]:" << mpd_rx_count << " complete.\n";
-
-            mpd_rx_count++;
-        }
-    }
 }
 
 int main(void)
@@ -193,7 +121,7 @@ int main(void)
 
     if ((comm_fd > 0) && (local_fd > 0)) {
         // run until daemon is killed
-        run(local_fd, comm_fd);
+        mailbox_daemon(local_fd, comm_fd, "[MPD]");
 
         // cleanup when stopped
         comm_fini(comm_fd);

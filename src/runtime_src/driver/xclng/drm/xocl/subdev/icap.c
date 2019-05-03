@@ -2021,19 +2021,19 @@ static int icap_download_bitstream_axlf(struct platform_device *pdev,
 			memset(&icap->cache, 0, sizeof(struct xcl_hwicap));
 			icap->cache_expires = ktime_sub(ktime_get_boottime(), ktime_set(1, 0));
 
-			if ((ch_state & MB_PEER_SAME_DOMAIN) != 0) {
-				data_len = sizeof(struct mailbox_req) + sizeof(struct mailbox_bitstream_kaddr);
-				mb_req = vmalloc(data_len);
-				if (!mb_req) {
-					ICAP_ERR(icap, "Unable to create mb_req\n");
-					err = -ENOMEM;
-					goto done;
-				}
-				mb_req->req = MAILBOX_REQ_LOAD_XCLBIN_KADDR;
-				mb_addr.addr = (uint64_t)xclbin;
-				memcpy(mb_req->data, &mb_addr, sizeof(struct mailbox_bitstream_kaddr));
+			//if ((ch_state & MB_PEER_SAME_DOMAIN) != 0) {
+			//	data_len = sizeof(struct mailbox_req) + sizeof(struct mailbox_bitstream_kaddr);
+			//	mb_req = vmalloc(data_len);
+			//	if (!mb_req) {
+			//		ICAP_ERR(icap, "Unable to create mb_req\n");
+			//		err = -ENOMEM;
+			//		goto done;
+			//	}
+			//	mb_req->req = MAILBOX_REQ_LOAD_XCLBIN_KADDR;
+			//	mb_addr.addr = (uint64_t)xclbin;
+			//	memcpy(mb_req->data, &mb_addr, sizeof(struct mailbox_bitstream_kaddr));
 
-			} else {
+			//} else {
 				data_len = sizeof(struct mailbox_req) +
 					xclbin->m_header.m_length;
 				mb_req = vmalloc(data_len);
@@ -2044,7 +2044,7 @@ static int icap_download_bitstream_axlf(struct platform_device *pdev,
 				}
 				memcpy(mb_req->data, u_xclbin, xclbin->m_header.m_length);
 				mb_req->req = MAILBOX_REQ_LOAD_XCLBIN;
-			}
+			//}
 			(void) xocl_peer_request(xdev,
 				mb_req, data_len, &msg, &resplen, NULL, NULL);
 
