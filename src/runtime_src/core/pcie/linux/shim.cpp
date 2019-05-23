@@ -1690,10 +1690,11 @@ int xclMailboxConfRead(unsigned deviceIndex, bool user,
 {
     std::string err;
     uint64_t sw;
-    std::vector<char> buf(conf->commIDLen);
+    //std::vector<char> buf(conf->commIDLen);
+    std::string s_id;
 
     pcidev::get_dev(deviceIndex, user)->sysfs_get("",
-        "config_mailbox_comm_id", err, buf);
+        "config_mailbox_comm_id", err, s_id);
     if (!err.empty()) {
         std::cout << "ERROR: " << err << std::endl;
         return -EINVAL;
@@ -1705,7 +1706,8 @@ int xclMailboxConfRead(unsigned deviceIndex, bool user,
         return -EINVAL;
     }
 
-    std::memcpy(conf->commID, buf.data(), buf.size());
+    //std::memcpy(conf->commID, buf.data(), buf.size());
+    strcpy(conf->commID, s_id.c_str());
     conf->chanSwitch = sw;
 
     return 0;

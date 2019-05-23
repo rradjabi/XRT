@@ -13,7 +13,7 @@
 #include "xclhal2.h"
 #include "common.h"
 
-#define MAX_TOKEN_LEN 32
+#define MAX_TOKEN_LEN 256
 
 std::string host_ip;
 std::string host_port;
@@ -35,11 +35,12 @@ int parse_cfg(std::string filename)
         if (std::getline(is_line, key, '=')) {
             std::string value;
             if (std::getline(is_line, value)) {
-                std::cout << "key: " << key << std::endl;
-                std::cout << "value: " << value << std::endl;
+                //std::cout << "key: " << key << std::endl;
+                //std::cout << "value: " << value << std::endl;
                 if (key == "board") {
                     std::cout << "board[" << i << "]: " << value << std::endl;
-                    if (value.size() > MAX_TOKEN_LEN) {
+                    std::string full_token( host_ip + "," + host_port + "," + value + ";" );
+                    if (full_token.size() > MAX_TOKEN_LEN) {
                         std::cout << "board token is too long, please reconfigure, maxlen: " 
                                   << MAX_TOKEN_LEN << std::endl;
                         return -EINVAL;
@@ -61,7 +62,7 @@ int parse_cfg(std::string filename)
                     continue;
                 }
             } else {
-                std::cout << "comment: " << key << std::endl;
+                //std::cout << "comment: " << key << std::endl;
             }
         }
     }
@@ -182,9 +183,9 @@ int main( void )
     unsigned numDevs;
     for (numDevs = 0; numDevs < boards.size(); numDevs++) {
         std::string id(host_ip+","+host_port+","+boards.at(numDevs)+";");
-        char buf[256] = { 0 };
+        char buf[MAX_TOKEN_LEN] = { 0 };
         std::memcpy(buf, id.c_str(), id.size());
-        struct xclMailboxConf conf = { buf, 256, strtoull(mbx_switch.c_str(), nullptr, 10) };
+        struct xclMailboxConf conf = { buf, MAX_TOKEN_LEN, strtoull(mbx_switch.c_str(), nullptr, 10) };
         if (xclMailboxConfWrite(numDevs, &conf)) {
             std::cout << "xclMailboxMgmtPutID(): " << errno << std::endl;
             return errno;

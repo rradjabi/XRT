@@ -35,7 +35,9 @@ static void mpd_comm_init(int *handle)
     // assign IP, PORT
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr = inet_addr( host_ip.c_str() );
+    std::cout << "#1\n";
     servaddr.sin_port = htons( std::stoi( host_port.c_str() ) );
+    std::cout << "#2\n";
 
     // connect the client socket to server socket
     if (connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) {
@@ -56,12 +58,13 @@ int main(void)
         return -ENODEV;
 
     for (int i = 0; i < numDevs; i++) {
-        int ret = fork();
-        if (ret < 0) {
-            std::cout << "Failed to create child process: " << errno << std::endl;
-            exit(errno);
-        }
-        if (ret == 0) { // child
+        int ret = 0;
+        //int ret = fork();
+        //if (ret < 0) {
+        //    std::cout << "Failed to create child process: " << errno << std::endl;
+        //    exit(errno);
+        //}
+        //if (ret == 0) { // child
             /* Ugly way to get host_ip, host_port, and cloud token(host_id) */
             char c_id[256];
             struct xclMailboxConf conf = { c_id, 256, 0 };
@@ -88,7 +91,7 @@ int main(void)
                 return errno;
             }
             break;
-        }
+        //}
         // parent continues but will never create thread, and eventually exit
         std::cout << "New child process: " << ret << std::endl;
     }
