@@ -1,4 +1,5 @@
 #!/bin/bash
+#modifications for CBL_MARINER to work.
 
 FLAVOR=`grep '^ID=' /etc/os-release | awk -F= '{print $2}' | tr -d '"'`
 VERSION=`grep '^VERSION_ID=' /etc/os-release | awk -F= '{print $2}' | tr -d '"'`
